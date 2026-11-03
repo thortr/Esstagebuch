@@ -264,7 +264,7 @@ nav.tabs button.on{color:var(--pri)}
 <script src="foods.js"></script>
 <script>
 "use strict";
-const APP_VERSION = "1.2";
+const APP_VERSION = "1.3";
 /* ============================================================
    Grunddaten
    ============================================================ */
@@ -958,16 +958,66 @@ function dictate({onText, onDone, onStart}){
 }
 
 let micActive = false;
+
+// Gesprochenes in einen vorhandenen Textteil einbauen:
+// nur eine Menge gesagt („150 g“) -> nur die Menge tauschen, sonst den ganzen Teil ersetzen
+function mergeSpoken(segText, said){
+  said = said.trim(); if (!said) return segText;
+  const ps = parseSegment(said, false);
+  if (ps.name) return said;
+  if (ps.qty === null && ps.unit === null) return said;
+  const p0 = parseSegment(segText, false);
+  const name = rawName(segText, p0.name) || segText.trim();
+  return said + ' ' + name;
+}
+// Textteile mit Position im Textfeld
+function segPositions(text){
+  const segs = splitText(text); let pos = 0;
+  return segs.map((sg, i) => { if (i) pos += sg.sep.length; const st = pos; pos += sg.text.length; return {...sg, i, start:st, end:pos}; });
+}
+// Was soll ersetzt werden? Markierung > Cursor in einem Teil > sonst anhängen
+function micTarget(){
+  const ta = $('txt'), v = ta.value;
+  let a = ta.selectionStart ?? v.length, b = ta.selectionEnd ?? v.length;
+  if (!v.trim() || a >= v.trimEnd().length) return {mode:'append'};
+  if (b > a) return {mode:'sel', a, b};
+  const seg = segPositions(v).find(sg => sg.text.trim() && a >= sg.start && a <= sg.end);
+  return seg ? {mode:'seg', seg} : {mode:'append'};
+}
+
 $('micBtn').addEventListener('click', ()=>{
   if (micActive){ stopRec(); return; }
-  const base = $('txt').value.trim();
-  const prefix = base ? base + ', ' : '';
+  const v = $('txt').value;
+  const tgt = micTarget();
+  let build, info;
+  if (tgt.mode === 'sel'){
+    const before = v.slice(0, tgt.a), after = v.slice(tgt.b);
+    build = t => before + t + after;
+    info = `Ersetze markierten Text „${v.slice(tgt.a, tgt.b).trim()}“ – jetzt sprechen …`;
+  } else if (tgt.mode === 'seg'){
+    const before = v.slice(0, tgt.seg.start), after = v.slice(tgt.seg.end);
+    const lead = tgt.seg.text.match(/^\s*/)[0], old = tgt.seg.text.trim();
+    build = t => before + lead + mergeSpoken(old, t) + after;
+    info = `Ersetze „${old}“ – jetzt sprechen (z. B. nur „150 g“) …`;
+  } else {
+    const base = v.trim(), prefix = base ? base + ', ' : '';
+    build = t => prefix + t;
+    info = null;
+  }
+  const original = v;
   micActive = true; $('micBtn').classList.add('rec'); $('micLabel').textContent = 'Fertig';
+  let got = '';
   dictate({
-    onText: t => { $('txt').value = prefix + applyWords(t); clearTimeout(analyseTimer); analyseTimer = setTimeout(analyse, 150); },
-    onDone: got => {
+    onStart: () => { if (info) setStatus(info); },
+    onText: t => { got = applyWords(t); $('txt').value = build(got); clearTimeout(analyseTimer); analyseTimer = setTimeout(analyse, 150); },
+    onDone: ok => {
       micActive = false; $('micBtn').classList.remove('rec'); $('micLabel').textContent = 'Sprechen';
-      if (got){ setStatus('Bitte prüfen – Fehler lassen sich mit ✎ oder 🎤 am jeweiligen Eintrag korrigieren.'); clearTimeout(analyseTimer); analyse(); rememberSpoken(); }
+      const ta = $('txt'); ta.selectionStart = ta.selectionEnd = ta.value.length;   // nächstes Sprechen hängt wieder an
+      if (ok && got){
+        clearTimeout(analyseTimer); analyse(); rememberSpoken();
+        if (tgt.mode === 'append') setStatus('Bitte prüfen – zum Korrigieren auf die falsche Stelle tippen und nochmal „Sprechen“, oder ✎ / 🎤 am Eintrag.');
+        else { setStatus('Ersetzt – bitte prüfen.'); toast('Text ersetzt', () => { $('txt').value = original; analyse(); }); }
+      }
     }
   });
 });
@@ -981,7 +1031,7 @@ function dictateSeg(it, btn){
     onText: t => { last = applyWords(t); setStatus('„' + last + '“'); },
     onDone: () => {
       btn.classList.remove('rec');
-      if (last){ setStatus('Korrigiert – bitte prüfen.'); replaceSeg(it, last); }
+      if (last){ setStatus('Korrigiert – bitte prüfen.'); replaceSeg(it, mergeSpoken(it.seg.text, last)); }
     }
   });
 }
