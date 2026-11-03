@@ -234,6 +234,12 @@ nav.tabs button.on{color:var(--pri)}
       <button class="btn pri big" id="saveGoals" style="margin-top:10px">Ziele speichern</button>
     </div>
     <div class="card">
+      <h2>Hörfehler-Korrekturen</h2>
+      <div class="small muted" style="margin-bottom:8px">Wenn die Spracherkennung ein Wort immer falsch versteht, wird es hier automatisch ersetzt. Einträge entstehen von selbst, sobald ein rot markiertes Wort korrigiert wird.</div>
+      <div id="wordList"></div>
+      <button class="btn big" id="addWord" style="margin-top:6px">＋ Korrektur selbst eintragen</button>
+    </div>
+    <div class="card">
       <h2>Eigene Lebensmittel</h2>
       <div id="customList"></div>
       <button class="btn big" id="addCustom" style="margin-top:6px">＋ Lebensmittel anlegen</button>
@@ -258,7 +264,7 @@ nav.tabs button.on{color:var(--pri)}
 <script src="foods.js"></script>
 <script>
 "use strict";
-const APP_VERSION = "1.1";
+const APP_VERSION = "1.2";
 /* ============================================================
    Grunddaten
    ============================================================ */
@@ -342,7 +348,7 @@ function loadDB(){
   let d = null;
   try { d = JSON.parse(localStorage.getItem(KEY)); } catch(e) {}
   d = d || {};
-  d.days = d.days || {}; d.custom = d.custom || []; d.learned = d.learned || {}; d.goals = d.goals || {};
+  d.days = d.days || {}; d.custom = d.custom || []; d.learned = d.learned || {}; d.words = d.words || {}; d.goals = d.goals || {};
   d.lastBackup = d.lastBackup || null;
   return d;
 }
@@ -543,7 +549,49 @@ let overrides = {};   // pro Textteil: {foodId, g}
 let currentItems = [];
 let hiddenAt = 0;
 let lastDetected = null;
-let misheard = {};   // korrigierter Text -> ursprünglich falsch erkannter Name
+let spoken = null;    // Stand direkt nach der Spracheingabe: {unknown:Map(norm->roh), names:Set}
+
+/* ---------- Hörfehler-Wörterbuch: „Kühe“ -> „Skyr“ ---------- */
+// Rohe Wörter eines Textteils, die zum erkannten Namen gehören (mit Umlauten, wie gesprochen)
+function rawName(segText, normName){
+  const want = new Set(normName.split(' '));
+  return (segText.match(/[\p{L}\p{N}][\p{L}\p{N}.,%-]*/gu) || []).filter(w => want.has(norm(w))).join(' ');
+}
+function applyWords(text){
+  const list = Object.values(DB.words || {}); if (!list.length || !text) return text;
+  const parts = text.split(/([\p{L}\p{N}]+)/u);       // ungerade Indizes = Wörter
+  for (const w of list){
+    const wt = norm(w.wrong).split(' ');
+    for (let i=1; i<parts.length; i+=2){
+      let ok = true;
+      for (let j=0; j<wt.length; j++){ const k = i + 2*j; if (k >= parts.length || norm(parts[k]) !== wt[j]){ ok = false; break; } }
+      if (!ok) continue;
+      parts[i] = w.right;
+      for (let j=1; j<wt.length; j++){ parts[i+2*j-1] = ''; parts[i+2*j] = ''; }
+    }
+  }
+  return parts.join('');
+}
+function learnWord(wrong, right){
+  wrong = (wrong||'').trim(); right = (right||'').trim();
+  if (!wrong || !right || norm(wrong) === norm(right)) return;
+  DB.words[norm(wrong)] = {wrong, right};
+  saveDB(); renderWords();
+  toast(`Gemerkt: „${wrong}“ wird künftig zu „${right}“ ✓`);
+}
+// Nach einer Spracheingabe festhalten, was unbekannt war
+function rememberSpoken(){
+  spoken = {unknown:new Map(), names:new Set()};
+  currentItems.forEach(it => { spoken.names.add(it.p.name); if (!it.food) spoken.unknown.set(it.p.name, rawName(it.seg.text, it.p.name)); });
+}
+// Beim Speichern: wurde ein unbekanntes Wort im Textfeld durch ein bekanntes ersetzt?
+function learnFromTextEdit(){
+  if (!spoken || !spoken.unknown.size) return;
+  const now = new Set(currentItems.map(it=>it.p.name));
+  const gone = [...spoken.unknown.entries()].filter(([n]) => !now.has(n));
+  const fresh = currentItems.filter(it => it.food && !spoken.names.has(it.p.name));
+  if (gone.length === 1 && fresh.length === 1) learnWord(gone[0][1], rawName(fresh[0].seg.text, fresh[0].p.name));
+}
 
 /* ============================================================
    Darstellung: Heute
@@ -674,20 +722,39 @@ $('items').addEventListener('click', e=>{
   if (act === 'del'){ replaceSeg(it, null); }
   else if (act === 'edit'){ editSegText(it); }
   else if (act === 'mic'){ dictateSeg(it, b); }
-  else if (act === 'choose'){ openChooser(it.p.name, fd=>{ setOverride(it, {foodId:fd.id}); }); }
-  else if (act === 'online'){ openChooser(it.p.name, fd=>{ setOverride(it, {foodId:fd.id}); }, true); }
-  else if (act === 'create'){ openFoodForm({name: capital(it.p.name)}, fd=>{ setOverride(it, {foodId:fd.id}); }); }
+  else if (act === 'choose'){ openChooser(it.p.name, fd=>pickFor(it, fd)); }
+  else if (act === 'online'){ openChooser(it.p.name, fd=>pickFor(it, fd), true); }
+  else if (act === 'create'){ openFoodForm({name: capital(rawName(it.seg.text, it.p.name) || it.p.name)}, fd=>pickFor(it, fd)); }
 });
 $('items').addEventListener('change', e=>{
   const inp = e.target; if (inp.dataset.act !== 'grams') return;
   const it = currentItems[+inp.dataset.i]; const v = parseFloat(String(inp.value).replace(',','.'));
   if (it && v > 0) setOverride(it, {g:v});
 });
+function pickFor(it, fd){
+  if (!it.food){
+    DB.learned[it.p.name] = fd.id; saveDB();                   // unbekanntes Wort -> dieses Lebensmittel, auch künftig
+    if (spoken && spoken.unknown.has(it.p.name)){              // kam aus der Spracheingabe: Wort im Text ersetzen
+      const right = fd.name.replace(/\s*\(.*\)\s*$/, '');
+      const wrong = spoken.unknown.get(it.p.name);
+      learnWord(wrong, right);
+      const p2 = parseSegment(right, false); DB.learned[p2.name] = fd.id; saveDB();
+      spoken.unknown.delete(it.p.name);
+      replaceSeg(it, applyWords(it.seg.text.trim()));
+      overrides[norm(applyWords(it.seg.text.trim()))] = {foodId: fd.id}; analyse();
+      return;
+    }
+  }
+  setOverride(it, {foodId:fd.id});
+}
 function setOverride(it, o){ overrides[it.key] = {...(overrides[it.key]||{}), ...o}; analyse(); }
 const capital = s => s.charAt(0).toUpperCase() + s.slice(1);
 
 function replaceSeg(it, newText){
-  if (newText && !it.food && it.p.name) misheard[norm(newText)] = misheard[it.key] || it.p.name;
+  if (newText && !it.food && it.p.name){
+    const p2 = parseSegment(newText, false), c = matchFood(p2.name);
+    if (p2.name && c.length && c[0].sc >= MATCH_MIN) learnWord(rawName(it.seg.text, it.p.name), rawName(newText, p2.name));
+  }
   const segs = splitText($('txt').value);
   if (newText === null){
     segs.splice(it.idx, 1);
@@ -709,12 +776,12 @@ function editSegText(it){
 /* ---------- Eintragen ---------- */
 $('saveBtn').addEventListener('click', ()=>{
   if (!currentItems.length || currentItems.some(it=>!it.food)) return;
+  learnFromTextEdit();
   const day = viewDate, meal = selMeal, now = Date.now();
   const list = DB.days[day] = DB.days[day] || [];
   const added = currentItems.map((it, i) => {
     const n = nutr(it.food, it.g);
     if (it.chosen) DB.learned[norm(it.p.name)] = it.food.id;
-    if (misheard[it.key]) DB.learned[norm(misheard[it.key])] = it.food.id;
     return {id: now.toString(36) + i + Math.random().toString(36).slice(2,6), ts: now, meal,
       text: cleanSaid(it.seg.text), name: it.food.name, foodId: it.food.id, g: Math.round(it.g*10)/10, label: it.label,
       k100: it.food.k, f100: it.food.f, p100: it.food.p, c100: it.food.c,
@@ -722,7 +789,7 @@ $('saveBtn').addEventListener('click', ()=>{
   });
   list.push(...added);
   saveDB();
-  $('txt').value = ''; overrides = {}; misheard = {}; currentItems = [];
+  $('txt').value = ''; overrides = {}; spoken = null; currentItems = [];
   renderItems(); renderBilanz(); renderList(); renderChips();
   $('status').textContent = '';
   toast(`${added.length === 1 ? '1 Eintrag' : added.length + ' Einträge'} in ${MEAL[meal].name} gespeichert ✓`, ()=>{
@@ -740,7 +807,7 @@ function cleanSaid(t){
 
 $('clearBtn').addEventListener('click', ()=>{
   const old = $('txt').value; if (!old) return;
-  $('txt').value = ''; overrides = {}; analyse();
+  $('txt').value = ''; overrides = {}; spoken = null; analyse();
   toast('Eingabe geleert', ()=>{ $('txt').value = old; analyse(); });
 });
 
@@ -850,8 +917,8 @@ function knownScore(text){
   return n;
 }
 function bestAlternative(res){
-  let best = res[0].transcript, bs = knownScore(best);
-  for (let j=1; j<res.length; j++){ const t = res[j].transcript, sc = knownScore(t); if (sc > bs + 0.5){ best = t; bs = sc; } }
+  let best = res[0].transcript, bs = knownScore(applyWords(best));
+  for (let j=1; j<res.length; j++){ const t = res[j].transcript, sc = knownScore(applyWords(t)); if (sc > bs + 0.5){ best = t; bs = sc; } }
   return best;
 }
 function setStatus(t, err){ $('status').textContent = t; $('status').classList.toggle('err', !!err); }
@@ -897,10 +964,10 @@ $('micBtn').addEventListener('click', ()=>{
   const prefix = base ? base + ', ' : '';
   micActive = true; $('micBtn').classList.add('rec'); $('micLabel').textContent = 'Fertig';
   dictate({
-    onText: t => { $('txt').value = prefix + t; clearTimeout(analyseTimer); analyseTimer = setTimeout(analyse, 150); },
+    onText: t => { $('txt').value = prefix + applyWords(t); clearTimeout(analyseTimer); analyseTimer = setTimeout(analyse, 150); },
     onDone: got => {
       micActive = false; $('micBtn').classList.remove('rec'); $('micLabel').textContent = 'Sprechen';
-      if (got){ setStatus('Bitte prüfen – Fehler lassen sich mit ✎ oder 🎤 am jeweiligen Eintrag korrigieren.'); analyse(); }
+      if (got){ setStatus('Bitte prüfen – Fehler lassen sich mit ✎ oder 🎤 am jeweiligen Eintrag korrigieren.'); clearTimeout(analyseTimer); analyse(); rememberSpoken(); }
     }
   });
 });
@@ -911,7 +978,7 @@ function dictateSeg(it, btn){
   btn.classList.add('rec');
   dictate({
     onStart: () => setStatus(`Neu sprechen statt „${it.seg.text.trim()}“ …`),
-    onText: t => { last = t; setStatus('„' + t + '“'); },
+    onText: t => { last = applyWords(t); setStatus('„' + last + '“'); },
     onDone: () => {
       btn.classList.remove('rec');
       if (last){ setStatus('Korrigiert – bitte prüfen.'); replaceSeg(it, last); }
@@ -1017,6 +1084,21 @@ function openFoodForm(pre, onSave, onCancel, editId){
   };
 }
 
+function renderWords(){
+  if (!$('wordList')) return;
+  const list = Object.entries(DB.words);
+  $('wordList').innerHTML = list.length ? list.map(([k,w])=>`<div class="opt" style="align-items:center">
+      <span>„${esc(w.wrong)}“ → <b>${esc(w.right)}</b></span><button class="ibtn" data-wrm="${esc(k)}">🗑</button></div>`).join('')
+    : `<div class="small muted">Noch keine.</div>`;
+}
+function openWordForm(){
+  modal(`<h3>Hörfehler-Korrektur</h3>
+    <label class="f">Was die Spracherkennung schreibt</label><input class="t" id="wW" placeholder="z. B. Kühe">
+    <label class="f">Was gemeint ist</label><input class="t" id="wR" placeholder="z. B. Skyr">
+    <div class="sheetbtns"><button class="btn ghost" data-close>Abbrechen</button><button class="btn pri" id="wOk">Speichern</button></div>`);
+  $('wW').focus();
+  $('wOk').onclick = () => { const w = $('wW').value, r = $('wR').value; if (!w.trim() || !r.trim()){ alert('Bitte beide Felder ausfüllen.'); return; } closeModal(); learnWord(w, r); };
+}
 function renderCustom(){
   if (!$('customList')) return;
   $('customList').innerHTML = DB.custom.length ? DB.custom.map(c=>`<div class="opt" style="align-items:center">
@@ -1034,6 +1116,13 @@ $('customList').addEventListener('click', e=>{
     for (const k in DB.learned) if (DB.learned[k] === c.id) delete DB.learned[k];
     saveDB(); rebuildCustom(); renderCustom();
   }
+});
+$('addWord').onclick = openWordForm;
+$('wordList').addEventListener('click', e=>{
+  const b = e.target.closest('[data-wrm]'); if (!b) return;
+  const w = DB.words[b.dataset.wrm];
+  if (!confirm(`Korrektur „${w.wrong}“ → „${w.right}“ löschen?`)) return;
+  delete DB.words[b.dataset.wrm]; saveDB(); renderWords();
 });
 $('addCustom').onclick = () => openFoodForm({}, fd => toast(`„${fd.name}“ angelegt ✓`));
 
@@ -1109,7 +1198,7 @@ $('expDaysSave').onclick  = () => hasData() && deliver(csvDays(), `Ernaehrung_Ta
 $('expEntries').onclick   = () => hasData() && deliver(csvEntries(), `Ernaehrung_Eintraege_${stamp()}.csv`, 'text/csv;charset=utf-8', true);
 
 $('backupBtn').onclick = async () => {
-  const data = JSON.stringify({app:'esstagebuch', version:1, exported:new Date().toISOString(), days:DB.days, custom:DB.custom, learned:DB.learned, goals:DB.goals});
+  const data = JSON.stringify({app:'esstagebuch', version:1, exported:new Date().toISOString(), days:DB.days, custom:DB.custom, learned:DB.learned, words:DB.words, goals:DB.goals});
   const ok = await deliver(data, `Esstagebuch_Sicherung_${stamp()}.json`, 'application/json', true);
   if (ok){ DB.lastBackup = Date.now(); saveDB(); renderBackupInfo(); }
 };
@@ -1128,7 +1217,7 @@ $('restoreFile').onchange = async e => {
     }
     const cids = new Set(DB.custom.map(c=>c.id));
     (j.custom||[]).forEach(c=>{ if (!cids.has(c.id)) DB.custom.push(c); });
-    DB.learned = {...(j.learned||{}), ...DB.learned};
+    DB.learned = {...(j.learned||{}), ...DB.learned}; DB.words = {...(j.words||{}), ...DB.words};
     if (!DB.goals.k && j.goals) DB.goals = j.goals;
     saveDB(); rebuildCustom(); renderAll();
     alert(`Sicherung eingelesen: ${added} Einträge hinzugefügt (vorhandene bleiben unverändert).`);
@@ -1170,7 +1259,7 @@ function showTab(name){
   ['heute','verlauf','mehr'].forEach(t=>$('tab-'+t).classList.toggle('hidden', t!==name));
   document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('on', b.dataset.tab===name));
   if (name === 'verlauf') renderHistory();
-  if (name === 'mehr'){ renderGoals(); renderCustom(); renderBackupInfo(); }
+  if (name === 'mehr'){ renderGoals(); renderWords(); renderCustom(); renderBackupInfo(); }
   window.scrollTo({top:0});
 }
 document.querySelectorAll('nav.tabs button').forEach(b=>b.onclick = ()=>showTab(b.dataset.tab));

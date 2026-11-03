@@ -58,7 +58,7 @@ Joghurt|Naturjoghurt|Jogurt|Joghurt 3,5;66;3.5;3.8;4.7;be=150;el=20;m=50
 Fettarmer Joghurt|Joghurt 1,5|fettarmer Jogurt|Joghurt light;48;1.5;4;4.8;be=150;el=20;m=50
 Griechischer Joghurt|Griechischer Jogurt|Joghurt griechisch;120;10;4.5;3.6;be=150;el=20;m=50
 Fruchtjoghurt|Erdbeerjoghurt|Kirschjoghurt;95;3;3.5;13;be=150
-Skyr|Skür|Sküür|Schkür|Skier|Skyr natur;63;0.2;11;4;be=150;el=20;m=50
+Skyr|Skür|Sküür|Schkür|Skier|Skir|Skyr natur;63;0.2;11;4;be=150;el=20;m=50
 Magerquark|Quark|Speisequark mager;67;0.3;12;4;el=30;po=125;be=250;m=50
 Quark 20|Speisequark 20|Speisequark;109;5;12;3.5;el=30;po=125;be=250;m=50
 Quark 40|Sahnequark;160;11;11;3;el=30;po=125;be=250;m=50
