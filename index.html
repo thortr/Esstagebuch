@@ -1,0 +1,1189 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Esstagebuch</title>
+<meta name="theme-color" content="#2f6f4f">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+:root{
+  --bg:#f5f2ea; --card:#ffffff; --ink:#1f2421; --muted:#68706b; --line:#e3ded2;
+  --pri:#2f6f4f; --pri-ink:#ffffff; --pri-soft:#e3efe7;
+  --warn:#b4540e; --warn-soft:#fdf0e3; --bad:#b3261e; --bad-soft:#fbe9e7;
+  --f:#d98e04; --m:#2f6f4f; --a:#3b5ba5; --s:#8a4f9e;
+  --kc:#c2410c; --fat:#ca8a04; --pro:#2563eb; --kh:#16a34a;
+  --shadow:0 1px 2px rgba(0,0,0,.06),0 2px 8px rgba(0,0,0,.05);
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#141714; --card:#1f231f; --ink:#ecefe9; --muted:#a3aaa4; --line:#333a34;
+    --pri:#5fb38a; --pri-ink:#0d1a12; --pri-soft:#203a2c;
+    --warn:#f0a35e; --warn-soft:#3a2614; --bad:#ff8a80; --bad-soft:#3d1d1b;
+    --f:#f0b43c; --m:#5fb38a; --a:#7d9be0; --s:#c28ad6;
+    --kc:#fb8a5a; --fat:#facc15; --pro:#7aa7ff; --kh:#4ade80;
+    --shadow:none;
+  }
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+body{padding-bottom:calc(76px + env(safe-area-inset-bottom))}
+button,input,textarea,select{font:inherit;color:inherit}
+button{cursor:pointer}
+main{max-width:640px;margin:0 auto;padding:12px 14px 24px}
+.card{background:var(--card);border-radius:16px;padding:14px;box-shadow:var(--shadow);margin-bottom:12px;border:1px solid var(--line)}
+h2{font-size:1.05rem;margin:0 0 10px}
+.muted{color:var(--muted)}
+.small{font-size:.86rem}
+.row{display:flex;gap:8px;align-items:center}
+.grow{flex:1}
+.hidden{display:none!important}
+
+/* Kopf mit Datum */
+.datebar{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.datebar .navbtn{width:46px;height:46px;border-radius:12px;border:1px solid var(--line);background:var(--card);font-size:1.3rem}
+.datebar .navbtn:disabled{opacity:.3}
+.datetitle{flex:1;text-align:center;font-weight:700;font-size:1.15rem}
+.datetitle small{display:block;font-weight:400;font-size:.85rem;color:var(--muted)}
+.pastwarn{background:var(--warn-soft);color:var(--warn);border:2px solid var(--warn);border-radius:14px;padding:10px 12px;margin-bottom:12px;font-weight:600;display:flex;gap:10px;align-items:center}
+.pastwarn button{margin-left:auto;background:var(--warn);color:#fff;border:0;border-radius:10px;padding:8px 12px;font-weight:700;white-space:nowrap}
+
+/* Bilanz */
+.bilanz{display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr;gap:6px;text-align:center}
+.bilanz .v{font-size:1.45rem;font-weight:800;line-height:1.1}
+.bilanz .kcal .v{font-size:1.9rem;color:var(--kc)}
+.bilanz .l{font-size:.78rem;color:var(--muted)}
+.bilanz .goal{font-size:.75rem;color:var(--muted)}
+.bar{height:6px;border-radius:3px;background:var(--line);margin-top:4px;overflow:hidden}
+.bar>i{display:block;height:100%;border-radius:3px}
+
+/* Mahlzeit-Auswahl */
+.meals{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px}
+.meals button{border:2px solid var(--line);background:var(--card);border-radius:12px;padding:10px 2px;font-weight:600;font-size:.92rem;line-height:1.15}
+.meals button .ic{display:block;font-size:1.3rem;margin-bottom:2px}
+.meals button.on{color:#fff;border-color:transparent}
+.meals button.on[data-meal=f]{background:var(--f)} .meals button.on[data-meal=m]{background:var(--m)}
+.meals button.on[data-meal=a]{background:var(--a)} .meals button.on[data-meal=s]{background:var(--s)}
+@media (prefers-color-scheme: dark){.meals button.on{color:#111}}
+.flash{animation:flash 1.2s ease}
+@keyframes flash{0%,100%{transform:none}20%{transform:scale(1.06)}}
+
+/* Eingabe */
+textarea#txt{width:100%;min-height:84px;border:2px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--bg);resize:vertical;font-size:1.05rem}
+textarea#txt:focus{outline:none;border-color:var(--pri)}
+.inbtns{display:flex;gap:8px;margin-top:8px}
+.btn{border:0;border-radius:12px;padding:12px 14px;font-weight:700;background:var(--pri-soft);color:var(--pri)}
+.btn.pri{background:var(--pri);color:var(--pri-ink)}
+.btn.big{padding:16px;font-size:1.08rem;width:100%}
+.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink);font-weight:600}
+.btn.bad{background:var(--bad-soft);color:var(--bad)}
+.btn:disabled{opacity:.45}
+.mic{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;font-size:1.08rem}
+.mic.rec{background:var(--bad);color:#fff;animation:pulse 1.2s infinite}
+@keyframes pulse{50%{opacity:.75}}
+.status{min-height:1.2em;margin-top:6px;font-size:.9rem;color:var(--muted)}
+.status.err{color:var(--bad);font-weight:600}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.chip{border:1px solid var(--line);background:var(--bg);border-radius:999px;padding:6px 11px;font-size:.88rem}
+
+/* Vorschau */
+.items{margin-top:10px;display:flex;flex-direction:column;gap:8px}
+.item{border:2px solid var(--line);border-radius:12px;padding:10px;background:var(--bg)}
+.item.unk{border-color:var(--bad);background:var(--bad-soft)}
+.item .said{font-size:.86rem;color:var(--muted);display:flex;gap:6px;align-items:center}
+.item .said span{flex:1;font-style:italic;overflow-wrap:anywhere}
+.ibtn{border:1px solid var(--line);background:var(--card);border-radius:10px;width:38px;height:36px;font-size:1rem;flex:none}
+.ibtn.rec{background:var(--bad);color:#fff}
+.item .main{display:flex;gap:8px;align-items:center;margin-top:6px}
+.foodbtn{flex:1;text-align:left;border:1px solid var(--line);background:var(--card);border-radius:10px;padding:9px 10px;font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.foodbtn::after{content:" ▾";color:var(--muted);font-weight:400}
+.gwrap{display:flex;align-items:center;gap:4px;flex:none}
+.gwrap input{width:76px;text-align:right;border:1px solid var(--line);border-radius:10px;padding:9px 8px;background:var(--card);font-weight:700}
+.item .nv{margin-top:6px;font-size:.9rem}
+.unkbtns{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.unkbtns .btn{padding:9px 11px;font-size:.92rem}
+.sumline{margin-top:10px}
+
+/* Liste */
+.mealhead{display:flex;align-items:center;gap:8px;margin:14px 0 6px;font-weight:700}
+.mealhead:first-child{margin-top:0}
+.mealhead .dot{width:12px;height:12px;border-radius:50%}
+.mealhead .k{margin-left:auto;color:var(--muted);font-weight:600;font-size:.9rem}
+.entry{display:flex;gap:10px;align-items:center;padding:10px;border-radius:10px;border:1px solid var(--line);margin-bottom:6px;background:var(--bg);width:100%;text-align:left}
+.entry .n{flex:1;min-width:0}
+.entry .n b{display:block;overflow-wrap:anywhere}
+.entry .k{font-weight:700;white-space:nowrap}
+.empty{color:var(--muted);text-align:center;padding:14px 4px}
+
+/* Verlauf */
+.hday{display:block;width:100%;text-align:left;border:1px solid var(--line);background:var(--bg);border-radius:12px;padding:10px 12px;margin-bottom:8px}
+.hday .top{display:flex;justify-content:space-between;font-weight:700}
+.chart{display:flex;align-items:flex-end;gap:4px;height:120px;margin-top:6px}
+.chart .c{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}
+.chart .c i{display:block;width:100%;background:var(--kc);border-radius:4px 4px 0 0;opacity:.8;min-height:2px}
+.chart .c span{font-size:.65rem;color:var(--muted);margin-top:3px}
+.chartgoal{position:relative}
+
+/* Formulare */
+label.f{display:block;margin:8px 0 3px;font-weight:600;font-size:.92rem}
+input.t{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--bg)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.stack>*+*{margin-top:8px}
+
+/* Untere Navigation */
+nav.tabs{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom);z-index:20}
+nav.tabs button{flex:1;border:0;background:none;padding:9px 4px 10px;font-size:.82rem;color:var(--muted);font-weight:600}
+nav.tabs button .ic{display:block;font-size:1.35rem}
+nav.tabs button.on{color:var(--pri)}
+
+/* Dialog */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center;z-index:50}
+.sheet{background:var(--card);width:100%;max-width:640px;max-height:88vh;overflow:auto;border-radius:18px 18px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom))}
+.sheet h3{margin:0 0 10px;font-size:1.15rem}
+.opt{display:flex;justify-content:space-between;gap:8px;width:100%;text-align:left;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:11px;margin-bottom:6px}
+.opt .muted{white-space:nowrap}
+.opt.sel{border:2px solid var(--pri)}
+.sheetbtns{display:flex;gap:8px;margin-top:14px}
+.sheetbtns .btn{flex:1}
+
+/* Hinweis-Leiste */
+#toast{position:fixed;left:50%;transform:translateX(-50%);width:max-content;bottom:calc(84px + env(safe-area-inset-bottom));background:#222;color:#fff;border-radius:12px;padding:12px 14px;display:flex;gap:14px;align-items:center;z-index:60;max-width:92vw;box-shadow:0 4px 18px rgba(0,0,0,.25)}
+#toast span{flex:1}
+#toast button{white-space:nowrap;background:none;border:0;color:#8ee0b4;font-weight:800;padding:0}
+</style>
+</head>
+<body>
+<main>
+  <!-- ===================== HEUTE ===================== -->
+  <section id="tab-heute">
+    <div class="datebar">
+      <button class="navbtn" id="prevDay" aria-label="Tag zurück">‹</button>
+      <div class="datetitle" id="dateTitle"></div>
+      <button class="navbtn" id="nextDay" aria-label="Tag vor">›</button>
+    </div>
+    <div class="pastwarn hidden" id="pastWarn">
+      <span id="pastWarnText"></span>
+      <button id="toToday">Zu heute</button>
+    </div>
+
+    <div class="card" id="bilanzCard">
+      <div class="bilanz" id="bilanz"></div>
+    </div>
+
+    <div class="card">
+      <div class="meals" id="meals"></div>
+      <textarea id="txt" placeholder="Was hast du gegessen?&#10;z. B. „2 Scheiben Vollkornbrot mit Butter und Käse“"></textarea>
+      <div class="inbtns">
+        <button class="btn pri mic" id="micBtn"><span>🎤</span><span id="micLabel">Sprechen</span></button>
+        <button class="btn ghost" id="clearBtn">Leeren</button>
+      </div>
+      <div class="status" id="status"></div>
+      <div class="items" id="items"></div>
+      <div class="sumline hidden" id="sumline"></div>
+      <button class="btn pri big hidden" id="saveBtn" style="margin-top:10px"></button>
+      <div class="chips" id="chips"></div>
+    </div>
+
+    <div class="card">
+      <h2 id="listTitle">Eingetragen</h2>
+      <div id="list"></div>
+    </div>
+  </section>
+
+  <!-- ===================== VERLAUF ===================== -->
+  <section id="tab-verlauf" class="hidden">
+    <div class="card">
+      <h2>Kalorien der letzten 14 Tage</h2>
+      <div class="chart" id="chart"></div>
+      <div class="small muted" id="avgLine" style="margin-top:8px"></div>
+    </div>
+    <div class="card">
+      <h2>Alle Tage</h2>
+      <div class="small muted" style="margin-bottom:8px">Antippen, um einen Tag anzusehen oder zu ändern.</div>
+      <div id="history"></div>
+    </div>
+  </section>
+
+  <!-- ===================== MEHR ===================== -->
+  <section id="tab-mehr" class="hidden">
+    <div class="card stack">
+      <h2>Daten exportieren</h2>
+      <div class="small muted">Eine Zeile pro Tag mit Kalorien, Fett, Eiweiß und Kohlenhydraten – passend zum Zusammenführen mit den Gewichtsdaten in Excel.</div>
+      <button class="btn pri big" id="expDaysShare">📤 Tageswerte senden (CSV)</button>
+      <button class="btn big" id="expDaysSave">💾 Tageswerte auf Handy speichern</button>
+      <button class="btn ghost big" id="expEntries">Alle Einzeleinträge als CSV</button>
+    </div>
+    <div class="card stack">
+      <h2>Sicherung</h2>
+      <div class="small muted">Die Daten liegen nur auf diesem Handy. Eine Sicherung schützt vor Verlust, z. B. wenn Chrome-Daten gelöscht werden. <b id="backupInfo"></b></div>
+      <button class="btn big" id="backupBtn">🛟 Sicherung erstellen</button>
+      <button class="btn ghost big" id="restoreBtn">Sicherung einlesen</button>
+      <input type="file" id="restoreFile" accept=".json,application/json" class="hidden">
+    </div>
+    <div class="card">
+      <h2>Tagesziele (optional)</h2>
+      <div class="small muted">Wenn ausgefüllt, zeigt die Bilanz Fortschrittsbalken.</div>
+      <div class="grid2">
+        <div><label class="f">Kalorien (kcal)</label><input class="t" type="number" inputmode="numeric" id="gK"></div>
+        <div><label class="f">Fett (g)</label><input class="t" type="number" inputmode="numeric" id="gF"></div>
+        <div><label class="f">Eiweiß (g)</label><input class="t" type="number" inputmode="numeric" id="gP"></div>
+        <div><label class="f">Kohlenhydrate (g)</label><input class="t" type="number" inputmode="numeric" id="gC"></div>
+      </div>
+      <button class="btn pri big" id="saveGoals" style="margin-top:10px">Ziele speichern</button>
+    </div>
+    <div class="card">
+      <h2>Eigene Lebensmittel</h2>
+      <div id="customList"></div>
+      <button class="btn big" id="addCustom" style="margin-top:6px">＋ Lebensmittel anlegen</button>
+    </div>
+    <div class="card small muted">
+      <b>Hinweis:</b> Die Nährwerte sind Richtwerte pro 100 g aus einer eingebauten Tabelle (ca. 270 Lebensmittel). Für Markenprodukte lieber „Online suchen“ nutzen oder das Etikett als eigenes Lebensmittel anlegen – die App merkt sich das.<br><br>
+      Die Spracheingabe nutzt die Spracherkennung von Chrome und braucht dafür meist Internet. Alles andere läuft ohne Internet.<br><br>
+      <span id="version"></span>
+    </div>
+  </section>
+</main>
+
+<nav class="tabs">
+  <button data-tab="heute" class="on"><span class="ic">🍽️</span>Heute</button>
+  <button data-tab="verlauf"><span class="ic">📅</span>Verlauf</button>
+  <button data-tab="mehr"><span class="ic">⚙️</span>Export &amp; mehr</button>
+</nav>
+
+<div id="modalRoot"></div>
+<div id="toast" class="hidden"><span id="toastText"></span><button id="toastUndo">Rückgängig</button></div>
+
+<script src="foods.js"></script>
+<script>
+"use strict";
+const APP_VERSION = "1.0";
+/* ============================================================
+   Grunddaten
+   ============================================================ */
+const MEALS = [
+  {id:'f', name:'Frühstück',   short:'Frühstück', ic:'☕'},
+  {id:'m', name:'Mittagessen', short:'Mittag',    ic:'🍲'},
+  {id:'a', name:'Abendessen',  short:'Abend',     ic:'🌙'},
+  {id:'s', name:'Sonstiges',   short:'Sonstiges', ic:'🍎'},
+];
+const MEAL = Object.fromEntries(MEALS.map(m=>[m.id,m]));
+
+// Gramm pro Einheit, wenn das Lebensmittel selbst nichts vorgibt
+const GENERIC = {g:1,kg:1000,ml:1,cl:10,l:1000,st:100,sc:30,el:15,tl:5,gl:200,ta:150,be:150,po:200,te:300,hv:30,ku:50,fl:500,do:330,pr:0.5,sh:10,tf:100,m:15};
+const UNIT_LABEL = {g:['g','g'],kg:['kg','kg'],ml:['ml','ml'],cl:['cl','cl'],l:['l','l'],st:['Stück','Stück'],sc:['Scheibe','Scheiben'],el:['EL','EL'],tl:['TL','TL'],gl:['Glas','Gläser'],ta:['Tasse','Tassen'],be:['Becher','Becher'],po:['Portion','Portionen'],te:['Teller','Teller'],hv:['Handvoll','Handvoll'],ku:['Kugel','Kugeln'],fl:['Flasche','Flaschen'],do:['Dose','Dosen'],pr:['Prise','Prisen'],sh:['Schuss','Schuss'],tf:['Tafel','Tafeln']};
+const ABS_UNITS = new Set(['g','kg','ml','cl','l']);
+const UNIT_WORDS = {
+  g:'g gr gramm grams gram', kg:'kg kilo kilogramm', ml:'ml milliliter', cl:'cl zentiliter', l:'l liter',
+  st:'stueck stk stck stuecke stueckchen riegel', sc:'scheibe scheiben scheibchen',
+  el:'el essloeffel essloeffeln loeffel loeffeln', tl:'tl teeloeffel teeloeffeln',
+  gl:'glas glaeser glaeschen', ta:'tasse tassen', be:'becher', po:'portion portionen schale schalen schuessel schuesseln schaelchen packung',
+  te:'teller', hv:'handvoll', ku:'kugel kugeln', fl:'flasche flaschen', do:'dose dosen', pr:'prise prisen', sh:'schuss spritzer', tf:'tafel tafeln'
+};
+const UNIT_OF = {};
+for (const [k,v] of Object.entries(UNIT_WORDS)) v.split(' ').forEach(w=>UNIT_OF[w]=k);
+
+const NUM_WORDS = {ein:1,eine:1,einen:1,einem:1,einer:1,eines:1,eins:1,zwei:2,drei:3,vier:4,fuenf:5,sechs:6,sieben:7,acht:8,neun:9,zehn:10,elf:11,zwoelf:12,
+  fuenfzehn:15,zwanzig:20,dreissig:30,vierzig:40,fuenfzig:50,hundert:100,einhundert:100,zweihundert:200,dreihundert:300,vierhundert:400,fuenfhundert:500,
+  halb:.5,halbe:.5,halber:.5,halbes:.5,halben:.5,viertel:.25,dreiviertel:.75,anderthalb:1.5,eineinhalb:1.5,einhalb:1.5,zweieinhalb:2.5,dreieinhalb:3.5,paar:3,doppelte:2,doppelt:2};
+const SIZE_WORDS = {klein:.7,kleine:.7,kleiner:.7,kleines:.7,kleinen:.7,gross:1.3,grosse:1.3,grosser:1.3,grosses:1.3,grossen:1.3,riesig:1.7,riesige:1.7,riesiger:1.7,mittel:1,mittlere:1,mittlerer:1,mittleres:1,normale:1,normaler:1,normales:1};
+const SMALL_WORDS = new Set(['etwas','bisschen','wenig','klecks','spur','hauch']);
+const FILLER = new Set(('ich habe hab hatte hat hatten gegessen getrunken esse trinke ass gerade eben noch nur ca circa etwa ungefaehr rund so also ' +
+  'von vom der die das dem den des zum zur zu fuer am im an aus heute dazu einmal mal und mit oder als auch ' +
+  'fruehstueck fruehstuecken mittagessen mittag mittags abendessen abendbrot abends abend snack zwischendurch nachmittags nachmittag vormittags ' +
+  'frisch frische frischer frisches warm warme warmer warmes kalt kalte kalter kaltes lecker leckere leckeren selbstgemacht selbstgemachte hausgemacht hausgemachte voll ' +
+  'stueckchen').split(' '));
+FILLER.delete('stueckchen');
+
+/* ============================================================
+   Text-Normalisierung und Lebensmittel-Index
+   ============================================================ */
+function norm(s){
+  return String(s).toLowerCase()
+    .replace(/(\d),(\d)/g,'$1.$2')
+    .replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue').replace(/ß/g,'ss')
+    .replace(/[éèê]/g,'e').replace(/[àâ]/g,'a').replace(/[ç]/g,'c')
+    .replace(/[^a-z0-9./ ]/g,' ')
+    .replace(/(?<!\d)[./]|[./](?!\d)/g,' ')
+    .replace(/\s+/g,' ').trim();
+}
+function stemWord(w){
+  for (const e of ['innen','chen','en','er','es','n','e','s']){
+    if (w.endsWith(e) && w.length - e.length >= 3) return w.slice(0,-e.length);
+  }
+  return w;
+}
+const stemPhrase = s => s.split(' ').map(stemWord).join(' ');
+
+function parseUnits(str){
+  const u = {};
+  (str||'').split(',').forEach(p=>{const [k,v]=p.split('='); if(k&&v) u[k.trim()] = parseFloat(v);});
+  return u;
+}
+const BASE_FOODS = FOOD_DATA.trim().split('\n').filter(l=>l.trim()).map(line=>{
+  const [names,k,f,p,c,...u] = line.split(';');
+  const al = names.split('|').map(s=>s.trim()).filter(Boolean);
+  return {id:'b:'+al[0], name:al[0], aliases:al, k:+k, f:+f, p:+p, c:+c, u:parseUnits(u.join(','))};
+});
+function indexFood(fd){
+  fd._n = fd.aliases.map(norm).filter(Boolean);
+  fd._s = fd._n.map(stemPhrase);
+  return fd;
+}
+BASE_FOODS.forEach(indexFood);
+
+/* ============================================================
+   Speicher
+   ============================================================ */
+const KEY = 'esstagebuch_v1';
+let DB = loadDB();
+function loadDB(){
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem(KEY)); } catch(e) {}
+  d = d || {};
+  d.days = d.days || {}; d.custom = d.custom || []; d.learned = d.learned || {}; d.goals = d.goals || {};
+  d.lastBackup = d.lastBackup || null;
+  return d;
+}
+function saveDB(){
+  try { localStorage.setItem(KEY, JSON.stringify(DB)); }
+  catch(e){ alert('Speichern fehlgeschlagen: ' + e.message + '\nBitte eine Sicherung erstellen.'); }
+}
+if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(()=>{});
+
+let CUSTOM = [];
+function rebuildCustom(){ CUSTOM = DB.custom.map(c=>indexFood({...c, aliases:c.aliases||[c.name], u:c.u||{}})); }
+rebuildCustom();
+const allFoods = () => CUSTOM.concat(BASE_FOODS);
+const foodById = id => allFoods().find(f=>f.id===id);
+
+/* ============================================================
+   Datum
+   ============================================================ */
+const pad = n => String(n).padStart(2,'0');
+const dkey = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const todayKey = () => dkey(new Date());
+const keyToDate = k => { const [y,m,d] = k.split('-').map(Number); return new Date(y,m-1,d); };
+const WD = ['So','Mo','Di','Mi','Do','Fr','Sa'];
+const WDL = ['Sonntag','Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag'];
+const dShort = k => { const d = keyToDate(k); return `${WD[d.getDay()]} ${pad(d.getDate())}.${pad(d.getMonth()+1)}.`; };
+const dDE = k => { const d = keyToDate(k); return `${pad(d.getDate())}.${pad(d.getMonth()+1)}.${d.getFullYear()}`; };
+const addDays = (k,n) => { const d = keyToDate(k); d.setDate(d.getDate()+n); return dkey(d); };
+function mealByTime(){
+  const d = new Date(), h = d.getHours() + d.getMinutes()/60;
+  if (h >= 4 && h < 10.75) return 'f';
+  if (h >= 10.75 && h < 14.5) return 'm';
+  if (h >= 17 && h < 21.5) return 'a';
+  return 's';
+}
+
+/* ============================================================
+   Zahlen
+   ============================================================ */
+const fmt = (n, dec=0) => (Math.round(n*10**dec)/10**dec).toLocaleString('de-DE',{minimumFractionDigits:dec,maximumFractionDigits:dec});
+const fmtG = n => n >= 10 ? fmt(n,0) : fmt(n,1).replace(/,0$/,'');
+function nutr(food, g){ const r = g/100; return {kcal:food.k*r, f:food.f*r, p:food.p*r, c:food.c*r}; }
+function sumOf(list){ return list.reduce((s,e)=>({kcal:s.kcal+e.kcal,f:s.f+e.f,p:s.p+e.p,c:s.c+e.c}),{kcal:0,f:0,p:0,c:0}); }
+const nvText = n => `${fmt(n.kcal)} kcal · F ${fmt(n.f)} · E ${fmt(n.p)} · KH ${fmt(n.c)}`;
+
+/* ============================================================
+   Erkennung: Text -> Teile -> Menge + Lebensmittel
+   ============================================================ */
+const SEP_RE = /\s*(?:(?<!\d),|,(?!\d)|;|\n|\+|&)\s*|\s+(?:und|mit|sowie|plus|dazu|außerdem|ausserdem|danach|dann|anschließend|anschliessend|sowie)\s+/gi;
+
+function splitText(text){
+  const segs = []; let last = 0, sep = '', m;
+  SEP_RE.lastIndex = 0;
+  while ((m = SEP_RE.exec(text))){
+    if (m[0] === '') { SEP_RE.lastIndex++; continue; }
+    segs.push({text:text.slice(last, m.index), sep});
+    sep = m[0]; last = m.index + m[0].length;
+  }
+  segs.push({text:text.slice(last), sep});
+  // "mit" vererben: "Kaffee mit Milch und Zucker" -> Zucker ist auch Beigabe
+  let mit = false;
+  segs.forEach(s=>{
+    const sp = s.sep.toLowerCase();
+    if (/\bmit\b/.test(sp)) mit = true;
+    else if (!/\bund\b/.test(sp)) mit = false;
+    s.mit = mit;
+  });
+  return segs;
+}
+function joinSegs(segs){ return segs.map((s,i)=> (i ? s.sep : '') + s.text).join(''); }
+
+function readNumber(tok){
+  if (/^\d+(\.\d+)?$/.test(tok)) return parseFloat(tok);
+  if (/^\d+\/\d+$/.test(tok)) { const [a,b] = tok.split('/').map(Number); return b ? a/b : null; }
+  if (tok in NUM_WORDS) return NUM_WORDS[tok];
+  return null;
+}
+
+function parseSegment(raw, isMit){
+  let toks = norm(raw).split(' ').filter(Boolean);
+  // "200g" / "0.3l" auseinandernehmen
+  toks = toks.flatMap(t => { const m = t.match(/^(\d+(?:[.\/]\d+)?)([a-z]+)$/); return m && UNIT_OF[m[2]] ? [m[1], m[2]] : [t]; });
+  let qty = null, unit = null, size = 1, small = false;
+  const rest = [];
+  for (let i=0; i<toks.length; i++){
+    const t = toks[i];
+    const n = readNumber(t);
+    if (n !== null && unit === null && !(rest.length && /^\d/.test(t) && !(UNIT_OF[toks[i+1]]))){
+      if (qty === null) qty = n;
+      else if (n === .5 && qty >= 1) qty = qty * .5;                    // "ein halbes", "zwei halbe"
+      else if (t === 'paar' && qty === 1) qty = 3;
+      else if (/^\d/.test(t)) qty = n;                                  // "eine 200 g …"
+      else rest.push(t);
+      continue;
+    }
+    if (UNIT_OF[t] && unit === null && (qty !== null || rest.length === 0)){
+      unit = UNIT_OF[t];
+      if (t === 'hand' && toks[i+1] === 'voll') i++;
+      continue;
+    }
+    if (t === 'hand' && toks[i+1] === 'voll' && unit === null){ unit = 'hv'; i++; continue; }
+    if (t in SIZE_WORDS){ size *= SIZE_WORDS[t]; continue; }
+    if (SMALL_WORDS.has(t)){ small = true; continue; }
+    if (FILLER.has(t)) continue;
+    rest.push(t);
+  }
+  // Menge am Ende: "Milch 200 ml"
+  if (qty === null && unit === null){
+    for (let i=0; i<rest.length-1; i++){
+      const n = readNumber(rest[i]);
+      if (n !== null && /^\d/.test(rest[i]) && UNIT_OF[rest[i+1]]){ qty = n; unit = UNIT_OF[rest[i+1]]; rest.splice(i,2); break; }
+    }
+  }
+  // Freistehende Zahl im Namen ohne Einheit (z. B. "Joghurt 150") -> als Gramm
+  if (qty === null && unit === null && rest.length > 1){
+    const i = rest.findIndex(t=>/^\d+$/.test(t) && +t >= 20);
+    if (i >= 0){ qty = +rest[i]; unit = 'g'; rest.splice(i,1); }
+  }
+  return {name: rest.join(' '), qty, unit, size, small, mit:isMit};
+}
+
+function matchFood(name){
+  const qn = norm(name); if (!qn) return [];
+  const qs = stemPhrase(qn);
+  const scores = new Map();
+  const put = (fd, sc) => { if (sc > (scores.get(fd) || 0)) scores.set(fd, sc); };
+  const learnedId = DB.learned[qn];
+  for (const fd of allFoods()){
+    if (fd.id === learnedId) { put(fd, 120); continue; }
+    const bonus = fd.id.startsWith('c:') ? 3 : 0;
+    fd._n.forEach((an, i) => {
+      const as = fd._s[i]; let sc = 0;
+      if (an === qn) sc = 100;
+      else if (as === qs) sc = 96;
+      else if ((' '+qs+' ').includes(' '+as+' ') && as.length >= 3) sc = 72 + 20*as.length/qs.length;
+      else if (qn.includes(an) && an.length >= 4) sc = 62 + 22*an.length/qn.length;
+      else if (an.includes(qn) && qn.length >= 4) sc = 58 + 22*qn.length/an.length;
+      else if (qs.length >= 5 && as.length >= 5 && Math.abs(qs.length-as.length) <= 2){
+        const d = lev(qs, as), lim = qs.length >= 8 ? 2 : 1;
+        if (d <= lim) sc = 82 - 10*d;
+      }
+      if (sc) put(fd, sc + bonus);
+    });
+  }
+  return [...scores.entries()].sort((a,b)=>b[1]-a[1]).map(([fd,sc])=>({fd,sc}));
+}
+function lev(a,b){
+  const m = a.length, n = b.length; let prev = Array.from({length:n+1},(_,j)=>j);
+  for (let i=1;i<=m;i++){
+    const cur=[i];
+    for (let j=1;j<=n;j++) cur[j] = Math.min(prev[j]+1, cur[j-1]+1, prev[j-1]+(a[i-1]===b[j-1]?0:1));
+    prev = cur;
+  }
+  return prev[n];
+}
+const MATCH_MIN = 60;
+
+function gramsFor(p, food){
+  const u = food ? food.u : {};
+  const per = k => (u[k] ?? GENERIC[k]);
+  let unit = p.unit, qty = p.qty;
+  if (unit === null){
+    // Beigabe ("mit Butter") oder "etwas": kleine Menge, aber nur bei typischen Beigaben
+    if (qty === null && (p.small || (p.mit && u.m != null))) return {g: per('m') * p.size, label: 'etwas'};
+    const order = ['st','po','gl','ta','be','sc','m','el'];
+    unit = order.find(k => u[k] != null) || 'g';
+    if (unit === 'g') { qty = (qty ?? 1) * 100; }
+    if (unit === 'm' && qty === null) return {g: per('m') * p.size, label: 'etwas'};
+  }
+  if (qty === null) qty = 1;
+  const g = qty * per(unit) * (ABS_UNITS.has(unit) ? 1 : p.size);
+  let label;
+  if (ABS_UNITS.has(unit)) label = `${fmtG(qty)} ${UNIT_LABEL[unit][0]}`;
+  else {
+    const qtxt = qty === .5 ? '½' : qty === .25 ? '¼' : qty === 1.5 ? '1½' : fmtG(qty);
+    const sz = p.size < 1 ? ' (klein)' : p.size > 1 ? ' (groß)' : '';
+    label = `${qtxt} ${UNIT_LABEL[unit] ? UNIT_LABEL[unit][qty > 1 ? 1 : 0] : unit}${sz}`;
+  }
+  return {g, label};
+}
+
+function detectMeal(text){
+  const t = norm(text);
+  if (/\bfruehstueck/.test(t)) return 'f';
+  if (/\bmittag/.test(t)) return 'm';
+  if (/\babend/.test(t)) return 'a';
+  if (/\b(snack|zwischendurch|nachmittag)/.test(t)) return 's';
+  return null;
+}
+
+/* ============================================================
+   Zustand
+   ============================================================ */
+let viewDate = todayKey();
+let lastToday = viewDate;
+let selMeal = mealByTime();
+let mealTouched = false;
+let overrides = {};   // pro Textteil: {foodId, g}
+let currentItems = [];
+let hiddenAt = 0;
+let lastDetected = null;
+
+/* ============================================================
+   Darstellung: Heute
+   ============================================================ */
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function renderDate(){
+  const isToday = viewDate === todayKey();
+  const d = keyToDate(viewDate);
+  $('dateTitle').innerHTML = (isToday ? 'Heute' : (viewDate === addDays(todayKey(),-1) ? 'Gestern' : WDL[d.getDay()])) + `<small>${WDL[d.getDay()]}, ${dDE(viewDate)}</small>`;
+  $('nextDay').disabled = viewDate >= todayKey();
+  $('pastWarn').classList.toggle('hidden', isToday);
+  $('pastWarnText').textContent = `Achtung: Du trägst für ${dShort(viewDate)} ein, nicht für heute.`;
+  $('listTitle').textContent = isToday ? 'Heute eingetragen' : `Eingetragen am ${dShort(viewDate)}`;
+}
+
+function renderBilanz(){
+  const s = sumOf(DB.days[viewDate] || []);
+  const g = DB.goals;
+  const cell = (cls, val, lbl, goal, color, unit) => {
+    const pct = goal ? Math.min(100, val/goal*100) : 0;
+    return `<div class="${cls}"><div class="v" style="${cls==='kcal'?'':'color:'+color}">${fmt(val)}</div>
+      <div class="l">${lbl}</div>
+      ${goal ? `<div class="bar"><i style="width:${pct}%;background:${val>goal*1.05?'var(--bad)':color}"></i></div><div class="goal">von ${fmt(goal)}${unit}</div>` : ''}</div>`;
+  };
+  $('bilanz').innerHTML =
+    cell('kcal', s.kcal, 'Kalorien', g.k, 'var(--kc)', '') +
+    cell('', s.f, 'Fett g', g.f, 'var(--fat)', ' g') +
+    cell('', s.p, 'Eiweiß g', g.p, 'var(--pro)', ' g') +
+    cell('', s.c, 'Kohlenh. g', g.c, 'var(--kh)', ' g');
+}
+
+function renderMeals(){
+  $('meals').innerHTML = MEALS.map(m=>`<button data-meal="${m.id}" class="${m.id===selMeal?'on':''}"><span class="ic">${m.ic}</span>${m.short}</button>`).join('');
+}
+function setMeal(id, flash){
+  selMeal = id; renderMeals(); renderSave();
+  if (flash){ const b = document.querySelector(`#meals [data-meal="${id}"]`); if (b){ b.classList.add('flash'); setTimeout(()=>b.classList.remove('flash'),1300);} }
+}
+$('meals').addEventListener('click', e=>{ const b = e.target.closest('button'); if (!b) return; mealTouched = true; setMeal(b.dataset.meal); });
+
+function analyse(){
+  const text = $('txt').value;
+  const segs = splitText(text);
+  currentItems = [];
+  segs.forEach((s, idx) => {
+    if (!s.text.trim()) return;
+    const p = parseSegment(s.text, s.mit);
+    if (!p.name) return;
+    const key = norm(s.text);
+    const ov = overrides[key] || {};
+    const cands = matchFood(p.name);
+    let food = ov.foodId ? foodById(ov.foodId) : null;
+    if (!food && cands.length && cands[0].sc >= MATCH_MIN) food = cands[0].fd;
+    const auto = gramsFor(p, food);
+    const g = ov.g != null ? ov.g : auto.g;
+    const label = ov.g != null ? `${fmtG(ov.g)} g` : auto.label;
+    currentItems.push({idx, seg:s, key, p, food, cands, g, label, chosen: !!ov.foodId});
+  });
+  // Mahlzeit aus dem Gesagten übernehmen ("zum Frühstück …")
+  const dm = detectMeal(text);
+  if (dm !== lastDetected){
+    lastDetected = dm;
+    if (dm && dm !== selMeal){ setMeal(dm, true); toast(`Mahlzeit erkannt: ${MEAL[dm].name}`); }
+  }
+  renderItems();
+}
+
+function renderItems(){
+  const box = $('items');
+  if (!currentItems.length){ box.innerHTML = ''; $('sumline').classList.add('hidden'); renderSave(); return; }
+  box.innerHTML = currentItems.map((it, i) => {
+    const said = `<div class="said"><span>„${esc(it.seg.text.trim())}“</span>
+        <button class="ibtn" data-act="edit" data-i="${i}" aria-label="Text ändern">✎</button>
+        ${SR ? `<button class="ibtn" data-act="mic" data-i="${i}" aria-label="Neu sprechen">🎤</button>` : ''}
+        <button class="ibtn" data-act="del" data-i="${i}" aria-label="Entfernen">✕</button></div>`;
+    if (!it.food){
+      return `<div class="item unk">${said}
+        <div style="margin-top:6px;font-weight:700;color:var(--bad)">„${esc(it.p.name)}“ nicht gefunden</div>
+        <div class="unkbtns">
+          <button class="btn" data-act="choose" data-i="${i}">🔎 Suchen / auswählen</button>
+          <button class="btn" data-act="online" data-i="${i}">🌐 Online suchen</button>
+          <button class="btn" data-act="create" data-i="${i}">＋ Selbst anlegen</button>
+        </div></div>`;
+    }
+    const n = nutr(it.food, it.g);
+    return `<div class="item">${said}
+      <div class="main">
+        <button class="foodbtn" data-act="choose" data-i="${i}">${esc(it.food.name)}</button>
+        <div class="gwrap"><input type="number" inputmode="decimal" value="${Math.round(it.g)}" data-act="grams" data-i="${i}" aria-label="Gramm"><span>g</span></div>
+      </div>
+      <div class="nv"><b>${esc(it.label)}</b> → ${nvText(n)}</div>
+    </div>`;
+  }).join('');
+  const ok = currentItems.filter(it=>it.food);
+  if (ok.length > 1){
+    const s = sumOf(ok.map(it=>nutr(it.food, it.g)));
+    $('sumline').innerHTML = `<b>Zusammen:</b> ${nvText(s)}`;
+    $('sumline').classList.remove('hidden');
+  } else $('sumline').classList.add('hidden');
+  renderSave();
+}
+
+function renderSave(){
+  const b = $('saveBtn');
+  if (!currentItems.length){ b.classList.add('hidden'); return; }
+  b.classList.remove('hidden');
+  const unk = currentItems.filter(it=>!it.food).length;
+  const isToday = viewDate === todayKey();
+  if (unk){
+    b.disabled = true;
+    b.textContent = unk === 1 ? 'Bitte erst das rot markierte klären' : `Bitte erst die ${unk} rot markierten klären`;
+  } else {
+    b.disabled = false;
+    const k = sumOf(currentItems.map(it=>nutr(it.food,it.g))).kcal;
+    b.innerHTML = `✓ In <u>${MEAL[selMeal].name}</u> eintragen${isToday ? '' : ' am ' + dShort(viewDate)} <span style="opacity:.8;font-weight:600">(${fmt(k)} kcal)</span>`;
+  }
+}
+
+let analyseTimer = null;
+$('txt').addEventListener('input', ()=>{ clearTimeout(analyseTimer); analyseTimer = setTimeout(analyse, 250); });
+
+$('items').addEventListener('click', e=>{
+  const b = e.target.closest('[data-act]'); if (!b || b.tagName === 'INPUT') return;
+  const it = currentItems[+b.dataset.i]; if (!it) return;
+  const act = b.dataset.act;
+  if (act === 'del'){ replaceSeg(it, null); }
+  else if (act === 'edit'){ editSegText(it); }
+  else if (act === 'mic'){ dictateSeg(it, b); }
+  else if (act === 'choose'){ openChooser(it.p.name, fd=>{ setOverride(it, {foodId:fd.id}); }); }
+  else if (act === 'online'){ openChooser(it.p.name, fd=>{ setOverride(it, {foodId:fd.id}); }, true); }
+  else if (act === 'create'){ openFoodForm({name: capital(it.p.name)}, fd=>{ setOverride(it, {foodId:fd.id}); }); }
+});
+$('items').addEventListener('change', e=>{
+  const inp = e.target; if (inp.dataset.act !== 'grams') return;
+  const it = currentItems[+inp.dataset.i]; const v = parseFloat(String(inp.value).replace(',','.'));
+  if (it && v > 0) setOverride(it, {g:v});
+});
+function setOverride(it, o){ overrides[it.key] = {...(overrides[it.key]||{}), ...o}; analyse(); }
+const capital = s => s.charAt(0).toUpperCase() + s.slice(1);
+
+function replaceSeg(it, newText){
+  const segs = splitText($('txt').value);
+  if (newText === null){
+    segs.splice(it.idx, 1);
+    if (segs.length) segs[0].sep = '';
+  } else segs[it.idx].text = newText;
+  $('txt').value = joinSegs(segs).replace(/^\s*(,|und|mit)\s*/i,'').trim();
+  analyse();
+}
+function editSegText(it){
+  modal(`<h3>Text ändern</h3>
+    <input class="t" id="segInp" value="${esc(it.seg.text.trim())}">
+    <div class="small muted" style="margin-top:6px">z. B. „150 g Magerquark“ oder „2 Scheiben Vollkornbrot“</div>
+    <div class="sheetbtns"><button class="btn ghost" data-close>Abbrechen</button><button class="btn pri" id="segOk">Übernehmen</button></div>`);
+  const inp = $('segInp'); inp.focus(); inp.select();
+  const ok = ()=>{ const v = inp.value.trim(); closeModal(); replaceSeg(it, v || null); };
+  $('segOk').onclick = ok; inp.onkeydown = e=>{ if (e.key === 'Enter') ok(); };
+}
+
+/* ---------- Eintragen ---------- */
+$('saveBtn').addEventListener('click', ()=>{
+  if (!currentItems.length || currentItems.some(it=>!it.food)) return;
+  const day = viewDate, meal = selMeal, now = Date.now();
+  const list = DB.days[day] = DB.days[day] || [];
+  const added = currentItems.map((it, i) => {
+    const n = nutr(it.food, it.g);
+    if (it.chosen) DB.learned[norm(it.p.name)] = it.food.id;
+    return {id: now.toString(36) + i + Math.random().toString(36).slice(2,6), ts: now, meal,
+      text: cleanSaid(it.seg.text), name: it.food.name, foodId: it.food.id, g: Math.round(it.g*10)/10, label: it.label,
+      k100: it.food.k, f100: it.food.f, p100: it.food.p, c100: it.food.c,
+      kcal: r1(n.kcal), f: r1(n.f), p: r1(n.p), c: r1(n.c)};
+  });
+  list.push(...added);
+  saveDB();
+  $('txt').value = ''; overrides = {}; currentItems = [];
+  renderItems(); renderBilanz(); renderList(); renderChips();
+  $('status').textContent = '';
+  toast(`${added.length === 1 ? '1 Eintrag' : added.length + ' Einträge'} in ${MEAL[meal].name} gespeichert ✓`, ()=>{
+    DB.days[day] = (DB.days[day]||[]).filter(e=>!added.includes(e));
+    if (!DB.days[day].length) delete DB.days[day];
+    saveDB(); renderAll();
+  });
+});
+const r1 = n => Math.round(n*10)/10;
+function cleanSaid(t){
+  return t.replace(/\b(zum|zur|zu|als|beim)\s+(frühstück|mittagessen|mittag|abendessen|abendbrot|abend|snack)\b/gi,' ')
+    .replace(/\b(ich\s+)?(habe|hab|hatte)(\s+ich)?\b/gi,' ').replace(/\b(gegessen|getrunken)\b/gi,' ')
+    .replace(/\s+/g,' ').trim() || t.trim();
+}
+
+$('clearBtn').addEventListener('click', ()=>{
+  const old = $('txt').value; if (!old) return;
+  $('txt').value = ''; overrides = {}; analyse();
+  toast('Eingabe geleert', ()=>{ $('txt').value = old; analyse(); });
+});
+
+/* ---------- Liste des Tages ---------- */
+function renderList(){
+  const list = DB.days[viewDate] || [];
+  if (!list.length){ $('list').innerHTML = `<div class="empty">Noch nichts eingetragen.</div>`; return; }
+  let html = '';
+  for (const m of MEALS){
+    const es = list.filter(e=>e.meal === m.id);
+    if (!es.length) continue;
+    const s = sumOf(es);
+    html += `<div class="mealhead"><span class="dot" style="background:var(--${m.id})"></span>${m.name}<span class="k">${fmt(s.kcal)} kcal</span></div>`;
+    html += es.map(e=>`<button class="entry" data-id="${e.id}">
+      <div class="n"><b>${esc(e.name)}</b><span class="small muted">${esc(e.label)}${/^[\d.,]+ g$/.test(e.label) ? '' : ' · ' + fmtG(e.g) + ' g'} · F ${fmt(e.f)} · E ${fmt(e.p)} · KH ${fmt(e.c)}</span></div>
+      <div class="k">${fmt(e.kcal)}</div></button>`).join('');
+  }
+  $('list').innerHTML = html;
+}
+$('list').addEventListener('click', e=>{ const b = e.target.closest('.entry'); if (b) openEntry(b.dataset.id); });
+
+function openEntry(id, state){
+  const list = DB.days[viewDate] || [];
+  const e = list.find(x=>x.id === id); if (!e) return;
+  let meal = state ? state.meal : e.meal, food = state ? state.food : null;
+  const per = () => food ? {k:food.k,f:food.f,p:food.p,c:food.c} : {k:e.k100,f:e.f100,p:e.p100,c:e.c100};
+  const preview = () => { const g = parseFloat(String($('eG').value).replace(',','.'))||0, q = per();
+    $('eNv').textContent = nvText({kcal:q.k*g/100,f:q.f*g/100,p:q.p*g/100,c:q.c*g/100}); };
+  modal(`<h3>Eintrag ändern</h3>
+    <div class="small muted">Eingegeben: „${esc(e.text)}“</div>
+    <label class="f">Lebensmittel</label>
+    <button class="foodbtn" id="eFood" style="width:100%">${esc(food ? food.name : e.name)}</button>
+    <label class="f">Menge in Gramm</label>
+    <input class="t" id="eG" type="number" inputmode="decimal" value="${state ? state.g : e.g}">
+    <div class="small" id="eNv" style="margin-top:6px"></div>
+    <label class="f">Mahlzeit</label>
+    <div class="meals" id="eMeals"></div>
+    <div class="sheetbtns"><button class="btn bad" id="eDel">Löschen</button><button class="btn ghost" data-close>Abbrechen</button><button class="btn pri" id="eOk">Speichern</button></div>`);
+  const rm = () => { $('eMeals').innerHTML = MEALS.map(m=>`<button data-meal="${m.id}" class="${m.id===meal?'on':''}"><span class="ic">${m.ic}</span>${m.short}</button>`).join(''); };
+  rm(); preview();
+  $('eMeals').onclick = ev => { const b = ev.target.closest('button'); if (b){ meal = b.dataset.meal; rm(); } };
+  $('eG').oninput = preview;
+  $('eFood').onclick = () => {
+    const keep = {g: $('eG').value, meal, food};
+    openChooser(e.name, fd => openEntry(id, {...keep, food: fd}), false, () => openEntry(id, keep));
+  };
+  $('eDel').onclick = () => {
+    const idx = list.indexOf(e); list.splice(idx,1);
+    if (!list.length) delete DB.days[viewDate];
+    saveDB(); closeModal(); renderAll();
+    const day = viewDate;
+    toast(`„${e.name}“ gelöscht`, ()=>{ (DB.days[day] = DB.days[day]||[]).splice(idx,0,e); saveDB(); renderAll(); });
+  };
+  $('eOk').onclick = () => {
+    const g = parseFloat(String($('eG').value).replace(',','.'));
+    if (!(g > 0)) { alert('Bitte eine Menge in Gramm angeben.'); return; }
+    const before = {...e};
+    if (food){ Object.assign(e, {name:food.name, foodId:food.id, k100:food.k, f100:food.f, p100:food.p, c100:food.c}); }
+    if (g !== e.g || food) e.label = `${fmtG(g)} g`;
+    e.g = g; e.meal = meal;
+    e.kcal = r1(e.k100*g/100); e.f = r1(e.f100*g/100); e.p = r1(e.p100*g/100); e.c = r1(e.c100*g/100);
+    saveDB(); closeModal(); renderAll();
+    toast('Eintrag geändert ✓', ()=>{ Object.assign(e, before); saveDB(); renderAll(); });
+  };
+}
+
+/* ---------- Häufige Einträge ---------- */
+function renderChips(){
+  const counts = new Map();
+  const cutoff = addDays(todayKey(), -60);
+  for (const [day, list] of Object.entries(DB.days)){
+    if (day < cutoff) continue;
+    for (const e of list){
+      const t = e.text.trim(); if (!t) continue;
+      const k = norm(t);
+      const c = counts.get(k) || {t, n:0, meals:{}};
+      c.n++; c.meals[e.meal] = (c.meals[e.meal]||0)+1; counts.set(k, c);
+    }
+  }
+  const arr = [...counts.values()].sort((a,b)=> (b.meals[selMeal]||0) - (a.meals[selMeal]||0) || b.n - a.n).slice(0,8);
+  $('chips').innerHTML = arr.length ? `<div class="small muted" style="width:100%">Schnell hinzufügen:</div>` +
+    arr.map(c=>`<button class="chip" data-t="${esc(c.t)}">＋ ${esc(c.t)}</button>`).join('') : '';
+}
+$('chips').addEventListener('click', e=>{
+  const b = e.target.closest('.chip'); if (!b) return;
+  const v = $('txt').value.trim();
+  $('txt').value = v ? v + ', ' + b.dataset.t : b.dataset.t;
+  analyse();
+});
+
+/* ---------- Datum wechseln ---------- */
+function goDay(k){ viewDate = k > todayKey() ? todayKey() : k; renderAll(); window.scrollTo({top:0}); }
+$('prevDay').onclick = () => goDay(addDays(viewDate,-1));
+$('nextDay').onclick = () => goDay(addDays(viewDate, 1));
+$('toToday').onclick = () => goDay(todayKey());
+
+/* ============================================================
+   Spracheingabe
+   ============================================================ */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null;
+function setStatus(t, err){ $('status').textContent = t; $('status').classList.toggle('err', !!err); }
+function stopRec(){ if (rec){ try{ rec.stop(); }catch(e){} } }
+
+function dictate({onText, onDone, onStart}){
+  if (!SR){ setStatus('Spracheingabe wird hier nicht unterstützt – bitte das Mikrofon der Tastatur benutzen.', true); return null; }
+  stopRec();
+  const r = new SR();
+  r.lang = 'de-DE'; r.interimResults = true; r.continuous = false; r.maxAlternatives = 1;
+  let finalText = '', gotAny = false;
+  r.onstart = () => { onStart && onStart(); setStatus('Ich höre zu … einfach sprechen.'); };
+  r.onresult = ev => {
+    let interim = ''; finalText = '';
+    for (let i=0; i<ev.results.length; i++){
+      const t = ev.results[i][0].transcript;
+      if (ev.results[i].isFinal) finalText += t; else interim += t;
+    }
+    gotAny = true;
+    onText((finalText + interim).trim(), false);
+  };
+  r.onerror = ev => {
+    const msg = {
+      'not-allowed':'Mikrofon ist nicht erlaubt. Bitte in Chrome beim Schloss-Symbol das Mikrofon freigeben.',
+      'service-not-allowed':'Mikrofon ist nicht erlaubt. Bitte in Chrome das Mikrofon freigeben.',
+      'no-speech':'Nichts gehört. Bitte nochmal auf „Sprechen“ tippen.',
+      'network':'Die Spracherkennung braucht Internet. Alternativ das Mikrofon der Tastatur benutzen.',
+      'audio-capture':'Kein Mikrofon gefunden.',
+      'aborted':''
+    }[ev.error] ?? ('Spracheingabe-Fehler: ' + ev.error);
+    if (msg) setStatus(msg, true);
+  };
+  r.onend = () => { rec = null; onDone && onDone(gotAny); };
+  rec = r;
+  try { r.start(); } catch(e){ setStatus('Spracheingabe konnte nicht starten.', true); rec = null; }
+  return r;
+}
+
+let micActive = false;
+$('micBtn').addEventListener('click', ()=>{
+  if (micActive){ stopRec(); return; }
+  const base = $('txt').value.trim();
+  const prefix = base ? base + ', ' : '';
+  micActive = true; $('micBtn').classList.add('rec'); $('micLabel').textContent = 'Fertig';
+  dictate({
+    onText: t => { $('txt').value = prefix + t; clearTimeout(analyseTimer); analyseTimer = setTimeout(analyse, 150); },
+    onDone: got => {
+      micActive = false; $('micBtn').classList.remove('rec'); $('micLabel').textContent = 'Sprechen';
+      if (got){ setStatus('Bitte prüfen – Fehler lassen sich mit ✎ oder 🎤 am jeweiligen Eintrag korrigieren.'); analyse(); }
+    }
+  });
+});
+if (!SR){ $('micLabel').textContent = 'Sprechen (nicht verfügbar)'; }
+
+function dictateSeg(it, btn){
+  let last = '';
+  btn.classList.add('rec');
+  dictate({
+    onStart: () => setStatus(`Neu sprechen statt „${it.seg.text.trim()}“ …`),
+    onText: t => { last = t; setStatus('„' + t + '“'); },
+    onDone: () => {
+      btn.classList.remove('rec');
+      if (last){ setStatus('Korrigiert – bitte prüfen.'); replaceSeg(it, last); }
+    }
+  });
+}
+
+/* ============================================================
+   Auswahl / Suche / Online / Eigenes Lebensmittel
+   ============================================================ */
+function openChooser(query, onPick, autoOnline, onCancel){
+  modal(`<h3>Lebensmittel wählen</h3>
+    <input class="t" id="chQ" value="${esc(query)}" placeholder="Suchen …">
+    <div id="chRes" style="margin-top:10px"></div>
+    <button class="btn big" id="chOnline" style="margin-top:6px">🌐 Online suchen (Open Food Facts)</button>
+    <div id="chOn" style="margin-top:10px"></div>
+    <button class="btn ghost big" id="chNew" style="margin-top:6px">＋ Neues Lebensmittel anlegen</button>
+    <div class="sheetbtns"><button class="btn ghost" id="chCancel">Abbrechen</button></div>`);
+  const pick = fd => { closeModal(); onPick(fd); };
+  const show = () => {
+    const q = $('chQ').value;
+    const res = q.trim() ? matchFood(q).slice(0,12).map(x=>x.fd) : CUSTOM.concat(BASE_FOODS).slice(0,12);
+    $('chRes').innerHTML = res.length ? res.map((fd,i)=>`<button class="opt" data-i="${i}"><span>${esc(fd.name)}${fd.id.startsWith('c:')?' <span class="small muted">(eigenes)</span>':''}</span><span class="muted small">${fmt(fd.k)} kcal/100 g</span></button>`).join('')
+      : `<div class="small muted">Nichts Passendes in der eingebauten Liste.</div>`;
+    $('chRes').onclick = e => { const b = e.target.closest('.opt'); if (b) pick(res[+b.dataset.i]); };
+  };
+  $('chQ').oninput = show; show();
+  $('chCancel').onclick = () => { closeModal(); onCancel && onCancel(); };
+  $('chNew').onclick = () => { const q = $('chQ').value.trim(); closeModal(); openFoodForm({name: capital(q)}, onPick, onCancel); };
+  $('chOnline').onclick = () => onlineSearch($('chQ').value.trim(), pick);
+  if (autoOnline) onlineSearch(query, pick);
+}
+
+async function onlineSearch(q, pick){
+  const box = $('chOn');
+  if (!q){ box.innerHTML = ''; return; }
+  if (!navigator.onLine){ box.innerHTML = `<div class="small" style="color:var(--bad)">Kein Internet. Bitte „Neues Lebensmittel anlegen“ nutzen.</div>`; return; }
+  box.innerHTML = `<div class="small muted">Suche online nach „${esc(q)}“ …</div>`;
+  const ctl = new AbortController(); const to = setTimeout(()=>ctl.abort(), 15000);
+  try {
+    const url = 'https://world.openfoodfacts.org/cgi/search.pl?search_simple=1&action=process&json=1&page_size=25&lc=de&cc=de' +
+      '&fields=code,product_name,product_name_de,brands,nutriments,serving_quantity&search_terms=' + encodeURIComponent(q);
+    const r = await fetch(url, {signal: ctl.signal});
+    const j = await r.json();
+    const res = (j.products||[]).map(p=>{
+      const n = p.nutriments || {};
+      let k = n['energy-kcal_100g']; if (k == null && n['energy_100g'] != null) k = n['energy_100g']/4.184;
+      const name = (p.product_name_de || p.product_name || '').trim();
+      if (!name || k == null) return null;
+      return {name, brand:(p.brands||'').split(',')[0].trim(), k:+k, f:+(n.fat_100g||0), p:+(n.proteins_100g||0), c:+(n.carbohydrates_100g||0), serving: +p.serving_quantity || null, code:p.code};
+    }).filter(Boolean).slice(0,15);
+    if (!res.length){ box.innerHTML = `<div class="small muted">Online nichts gefunden. Anderen Begriff versuchen oder selbst anlegen.</div>`; return; }
+    box.innerHTML = `<div class="small muted" style="margin-bottom:6px">Online-Treffer (Werte pro 100 g):</div>` +
+      res.map((x,i)=>`<button class="opt" data-i="${i}"><span>${esc(x.name)}${x.brand?` <span class="small muted">· ${esc(x.brand)}</span>`:''}</span><span class="muted small">${fmt(x.k)} kcal</span></button>`).join('');
+    box.onclick = e => {
+      const b = e.target.closest('.opt'); if (!b) return;
+      const x = res[+b.dataset.i];
+      const fd = addCustom({name: x.brand ? `${x.name} (${x.brand})` : x.name, aliases:[x.name, x.brand ? `${x.name} ${x.brand}` : x.name, q],
+        k:r1(x.k), f:r1(x.f), p:r1(x.p), c:r1(x.c), u: x.serving ? {st:x.serving} : {}, src:'off'});
+      pick(fd);
+    };
+  } catch(e){
+    box.innerHTML = `<div class="small" style="color:var(--bad)">Online-Suche nicht möglich (${esc(e.name==='AbortError'?'Zeitüberschreitung':e.message)}).</div>`;
+  } finally { clearTimeout(to); }
+}
+
+function addCustom(c){
+  const fd = {id:'c:' + Date.now().toString(36) + Math.random().toString(36).slice(2,5), name:c.name, aliases:[...new Set((c.aliases||[]).concat(c.name).filter(Boolean))],
+    k:c.k, f:c.f, p:c.p, c:c.c, u:c.u||{}, src:c.src||'eigen'};
+  DB.custom.push(fd); saveDB(); rebuildCustom(); renderCustom();
+  return foodById(fd.id);
+}
+
+function openFoodForm(pre, onSave, onCancel, editId){
+  const v = (x) => x == null ? '' : x;
+  modal(`<h3>${editId ? 'Lebensmittel bearbeiten' : 'Neues Lebensmittel'}</h3>
+    <div class="small muted">Werte pro 100 g (bzw. 100 ml) – stehen auf der Verpackung.</div>
+    <label class="f">Name</label><input class="t" id="cfN" value="${esc(v(pre.name))}">
+    <div class="grid2">
+      <div><label class="f">Kalorien (kcal)</label><input class="t" id="cfK" type="number" inputmode="decimal" value="${v(pre.k)}"></div>
+      <div><label class="f">Fett (g)</label><input class="t" id="cfF" type="number" inputmode="decimal" value="${v(pre.f)}"></div>
+      <div><label class="f">Eiweiß (g)</label><input class="t" id="cfP" type="number" inputmode="decimal" value="${v(pre.p)}"></div>
+      <div><label class="f">Kohlenhydrate (g)</label><input class="t" id="cfC" type="number" inputmode="decimal" value="${v(pre.c)}"></div>
+    </div>
+    <label class="f">1 Stück / Portion wiegt (g) – optional</label><input class="t" id="cfS" type="number" inputmode="decimal" value="${v(pre.u && (pre.u.st||pre.u.po))}">
+    <div class="sheetbtns"><button class="btn ghost" id="cfCancel">Abbrechen</button><button class="btn pri" id="cfOk">Speichern</button></div>`);
+  $('cfN').focus();
+  $('cfCancel').onclick = () => { closeModal(); onCancel && onCancel(); };
+  $('cfOk').onclick = () => {
+    const num = id => { const x = parseFloat(String($(id).value).replace(',','.')); return isNaN(x) ? null : x; };
+    const name = $('cfN').value.trim(), k = num('cfK');
+    if (!name){ alert('Bitte einen Namen eingeben.'); return; }
+    if (k == null){ alert('Bitte mindestens die Kalorien pro 100 g eingeben.'); return; }
+    const s = num('cfS');
+    const data = {name, k, f:num('cfF')||0, p:num('cfP')||0, c:num('cfC')||0, u: s ? {st:s} : {}};
+    let fd;
+    if (editId){
+      const c = DB.custom.find(x=>x.id===editId);
+      Object.assign(c, data, {aliases:[...new Set([name].concat((c.aliases||[]).filter(a=>a!==c.name)))]});
+      saveDB(); rebuildCustom(); renderCustom(); fd = foodById(editId);
+    } else fd = addCustom({...data, aliases:[name]});
+    closeModal(); onSave && onSave(fd);
+  };
+}
+
+function renderCustom(){
+  if (!$('customList')) return;
+  $('customList').innerHTML = DB.custom.length ? DB.custom.map(c=>`<div class="opt" style="align-items:center">
+      <span>${esc(c.name)}<br><span class="small muted">${fmt(c.k)} kcal · F ${fmt(c.f,1)} · E ${fmt(c.p,1)} · KH ${fmt(c.c,1)} /100 g</span></span>
+      <span class="row"><button class="ibtn" data-ed="${c.id}">✎</button><button class="ibtn" data-rm="${c.id}">🗑</button></span></div>`).join('')
+    : `<div class="small muted">Noch keine. Werden automatisch angelegt, wenn du etwas online suchst oder selbst anlegst.</div>`;
+}
+$('customList').addEventListener('click', e=>{
+  const ed = e.target.closest('[data-ed]'), rm = e.target.closest('[data-rm]');
+  if (ed){ const c = DB.custom.find(x=>x.id===ed.dataset.ed); openFoodForm(c, null, null, c.id); }
+  if (rm){
+    const c = DB.custom.find(x=>x.id===rm.dataset.rm);
+    if (!confirm(`„${c.name}“ aus der Liste entfernen?\n(Bereits eingetragene Mahlzeiten bleiben erhalten.)`)) return;
+    DB.custom = DB.custom.filter(x=>x!==c);
+    for (const k in DB.learned) if (DB.learned[k] === c.id) delete DB.learned[k];
+    saveDB(); rebuildCustom(); renderCustom();
+  }
+});
+$('addCustom').onclick = () => openFoodForm({}, fd => toast(`„${fd.name}“ angelegt ✓`));
+
+/* ============================================================
+   Verlauf
+   ============================================================ */
+function renderHistory(){
+  const days = Object.keys(DB.days).filter(k=>DB.days[k].length).sort().reverse();
+  // Diagramm 14 Tage
+  const t = todayKey(); const cols = [];
+  for (let i=13; i>=0; i--){ const k = addDays(t,-i); cols.push({k, s: sumOf(DB.days[k]||[])}); }
+  const max = Math.max(DB.goals.k||0, ...cols.map(c=>c.s.kcal), 1);
+  $('chart').innerHTML = cols.map(c=>`<div class="c" title="${dShort(c.k)}: ${fmt(c.s.kcal)} kcal"><i style="height:${c.s.kcal/max*100}%"></i><span>${keyToDate(c.k).getDate()}.</span></div>`).join('');
+  const last7 = []; for (let i=1; i<=7; i++){ const k = addDays(t,-i); if ((DB.days[k]||[]).length) last7.push(sumOf(DB.days[k])); }
+  if (last7.length){
+    const a = sumOf(last7), n = last7.length;
+    $('avgLine').textContent = `Durchschnitt der letzten 7 Tage (ohne heute, ${n} Tag${n>1?'e':''} mit Einträgen): ${fmt(a.kcal/n)} kcal · F ${fmt(a.f/n)} g · E ${fmt(a.p/n)} g · KH ${fmt(a.c/n)} g`;
+  } else $('avgLine').textContent = '';
+  $('history').innerHTML = days.length ? days.map(k=>{
+    const s = sumOf(DB.days[k]);
+    const per = MEALS.map(m=>{ const x = sumOf(DB.days[k].filter(e=>e.meal===m.id)).kcal; return x ? `${m.short} ${fmt(x)}` : ''; }).filter(Boolean).join(' · ');
+    return `<button class="hday" data-k="${k}"><div class="top"><span>${k===t?'Heute':dShort(k)+keyToDate(k).getFullYear().toString().slice(2)}</span><span style="color:var(--kc)">${fmt(s.kcal)} kcal</span></div>
+      <div class="small">F ${fmt(s.f)} g · E ${fmt(s.p)} g · KH ${fmt(s.c)} g</div><div class="small muted">${per}</div></button>`;
+  }).join('') : `<div class="empty">Noch keine Tage gespeichert.</div>`;
+}
+$('history').addEventListener('click', e=>{ const b = e.target.closest('.hday'); if (b){ showTab('heute'); goDay(b.dataset.k); } });
+
+/* ============================================================
+   Export & Sicherung
+   ============================================================ */
+const dec = (n, d=1) => (Math.round(n*10**d)/10**d).toFixed(d).replace('.', ',');
+const csvCell = s => { s = String(s); return /[;"\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s; };
+function csvDays(){
+  const rows = [['Datum','Kalorien (kcal)','Fett (g)','Eiweiß (g)','Kohlenhydrate (g)','Frühstück (kcal)','Mittagessen (kcal)','Abendessen (kcal)','Sonstiges (kcal)','Einträge']];
+  Object.keys(DB.days).filter(k=>DB.days[k].length).sort().forEach(k=>{
+    const l = DB.days[k], s = sumOf(l);
+    rows.push([dDE(k), Math.round(s.kcal), dec(s.f), dec(s.p), dec(s.c), ...MEALS.map(m=>Math.round(sumOf(l.filter(e=>e.meal===m.id)).kcal)), l.length]);
+  });
+  return rows.map(r=>r.map(csvCell).join(';')).join('\r\n');
+}
+function csvEntries(){
+  const rows = [['Datum','Uhrzeit','Mahlzeit','Eingabe','Lebensmittel','Menge','Gramm','Kalorien (kcal)','Fett (g)','Eiweiß (g)','Kohlenhydrate (g)']];
+  Object.keys(DB.days).sort().forEach(k=>{
+    DB.days[k].forEach(e=>{
+      const d = new Date(e.ts);
+      rows.push([dDE(k), `${pad(d.getHours())}:${pad(d.getMinutes())}`, MEAL[e.meal].name, e.text, e.name, e.label, dec(e.g), Math.round(e.kcal), dec(e.f), dec(e.p), dec(e.c)]);
+    });
+  });
+  return rows.map(r=>r.map(csvCell).join(';')).join('\r\n');
+}
+async function deliver(content, filename, mime, share){
+  const blob = new Blob([mime.startsWith('text/csv') ? '﻿' + content : content], {type: mime});
+  if (share){
+    try {
+      const file = new File([blob], filename, {type: mime});
+      if (navigator.canShare && navigator.canShare({files:[file]})){
+        await navigator.share({files:[file], title: filename});
+        return true;
+      }
+    } catch(e){ if (e.name === 'AbortError') return false; }
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+  toast(`„${filename}“ gespeichert (Ordner „Downloads“)`);
+  return true;
+}
+const stamp = () => todayKey();
+function hasData(){ if (!Object.keys(DB.days).length){ alert('Es sind noch keine Daten vorhanden.'); return false; } return true; }
+$('expDaysShare').onclick = () => hasData() && deliver(csvDays(), `Ernaehrung_Tageswerte_${stamp()}.csv`, 'text/csv;charset=utf-8', true);
+$('expDaysSave').onclick  = () => hasData() && deliver(csvDays(), `Ernaehrung_Tageswerte_${stamp()}.csv`, 'text/csv;charset=utf-8', false);
+$('expEntries').onclick   = () => hasData() && deliver(csvEntries(), `Ernaehrung_Eintraege_${stamp()}.csv`, 'text/csv;charset=utf-8', true);
+
+$('backupBtn').onclick = async () => {
+  const data = JSON.stringify({app:'esstagebuch', version:1, exported:new Date().toISOString(), days:DB.days, custom:DB.custom, learned:DB.learned, goals:DB.goals});
+  const ok = await deliver(data, `Esstagebuch_Sicherung_${stamp()}.json`, 'application/json', true);
+  if (ok){ DB.lastBackup = Date.now(); saveDB(); renderBackupInfo(); }
+};
+$('restoreBtn').onclick = () => $('restoreFile').click();
+$('restoreFile').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try {
+    const j = JSON.parse(await f.text());
+    if (j.app !== 'esstagebuch' || !j.days) throw new Error('Keine Esstagebuch-Sicherung');
+    let added = 0;
+    for (const [k, list] of Object.entries(j.days)){
+      const cur = DB.days[k] = DB.days[k] || [];
+      const ids = new Set(cur.map(x=>x.id));
+      list.forEach(x=>{ if (!ids.has(x.id)){ cur.push(x); added++; } });
+      cur.sort((a,b)=>a.ts-b.ts);
+    }
+    const cids = new Set(DB.custom.map(c=>c.id));
+    (j.custom||[]).forEach(c=>{ if (!cids.has(c.id)) DB.custom.push(c); });
+    DB.learned = {...(j.learned||{}), ...DB.learned};
+    if (!DB.goals.k && j.goals) DB.goals = j.goals;
+    saveDB(); rebuildCustom(); renderAll();
+    alert(`Sicherung eingelesen: ${added} Einträge hinzugefügt (vorhandene bleiben unverändert).`);
+  } catch(err){ alert('Die Datei konnte nicht gelesen werden: ' + err.message); }
+};
+function renderBackupInfo(){
+  if (!DB.lastBackup){ $('backupInfo').textContent = 'Noch keine Sicherung erstellt.'; return; }
+  const d = Math.floor((Date.now()-DB.lastBackup)/864e5);
+  $('backupInfo').textContent = 'Letzte Sicherung: ' + (d === 0 ? 'heute' : d === 1 ? 'gestern' : `vor ${d} Tagen`) + '.';
+}
+
+/* ---------- Ziele ---------- */
+function renderGoals(){ $('gK').value = DB.goals.k||''; $('gF').value = DB.goals.f||''; $('gP').value = DB.goals.p||''; $('gC').value = DB.goals.c||''; }
+$('saveGoals').onclick = () => {
+  const n = id => { const x = parseFloat($(id).value); return x > 0 ? x : null; };
+  DB.goals = {k:n('gK'), f:n('gF'), p:n('gP'), c:n('gC')}; saveDB(); renderBilanz(); toast('Ziele gespeichert ✓');
+};
+
+/* ============================================================
+   Dialog, Hinweis, Tabs
+   ============================================================ */
+function modal(html){
+  $('modalRoot').innerHTML = `<div class="modal"><div class="sheet">${html}</div></div>`;
+  const m = $('modalRoot').firstChild;
+  m.addEventListener('click', e=>{ if (e.target === m || e.target.closest('[data-close]')) closeModal(); });
+}
+function closeModal(){ $('modalRoot').innerHTML = ''; }
+
+let toastTimer = null, undoFn = null;
+function toast(text, undo){
+  $('toastText').textContent = text; undoFn = undo || null;
+  $('toastUndo').classList.toggle('hidden', !undo);
+  $('toast').classList.remove('hidden');
+  clearTimeout(toastTimer); toastTimer = setTimeout(()=>$('toast').classList.add('hidden'), undo ? 7000 : 3000);
+}
+$('toastUndo').onclick = () => { $('toast').classList.add('hidden'); if (undoFn){ const f = undoFn; undoFn = null; f(); toast('Rückgängig gemacht'); } };
+
+function showTab(name){
+  ['heute','verlauf','mehr'].forEach(t=>$('tab-'+t).classList.toggle('hidden', t!==name));
+  document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('on', b.dataset.tab===name));
+  if (name === 'verlauf') renderHistory();
+  if (name === 'mehr'){ renderGoals(); renderCustom(); renderBackupInfo(); }
+  window.scrollTo({top:0});
+}
+document.querySelectorAll('nav.tabs button').forEach(b=>b.onclick = ()=>showTab(b.dataset.tab));
+
+function renderAll(){ renderDate(); renderBilanz(); renderMeals(); renderList(); renderChips(); renderItems(); if (!$('tab-verlauf').classList.contains('hidden')) renderHistory(); }
+
+/* ---------- Tageswechsel / Rückkehr in die App ---------- */
+function checkDay(){
+  const t = todayKey();
+  if (t !== lastToday){
+    if (viewDate === lastToday) viewDate = t;
+    lastToday = t; mealTouched = false; selMeal = mealByTime(); renderAll();
+  }
+}
+document.addEventListener('visibilitychange', ()=>{
+  if (document.hidden){ hiddenAt = Date.now(); return; }
+  checkDay();
+  if (Date.now() - hiddenAt > 45*60*1000 && !$('txt').value.trim()){
+    // längere Pause: zurück auf heute und passende Mahlzeit
+    viewDate = todayKey(); selMeal = mealByTime(); mealTouched = false; renderAll();
+  }
+});
+setInterval(checkDay, 60*1000);
+
+$('version').textContent = `Version ${APP_VERSION} · ${BASE_FOODS.length} Lebensmittel eingebaut`;
+renderAll();
+
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script>
+</body>
+</html>
