@@ -258,7 +258,7 @@ nav.tabs button.on{color:var(--pri)}
 <script src="foods.js"></script>
 <script>
 "use strict";
-const APP_VERSION = "1.0";
+const APP_VERSION = "1.1";
 /* ============================================================
    Grunddaten
    ============================================================ */
@@ -543,6 +543,7 @@ let overrides = {};   // pro Textteil: {foodId, g}
 let currentItems = [];
 let hiddenAt = 0;
 let lastDetected = null;
+let misheard = {};   // korrigierter Text -> ursprünglich falsch erkannter Name
 
 /* ============================================================
    Darstellung: Heute
@@ -686,6 +687,7 @@ function setOverride(it, o){ overrides[it.key] = {...(overrides[it.key]||{}), ..
 const capital = s => s.charAt(0).toUpperCase() + s.slice(1);
 
 function replaceSeg(it, newText){
+  if (newText && !it.food && it.p.name) misheard[norm(newText)] = misheard[it.key] || it.p.name;
   const segs = splitText($('txt').value);
   if (newText === null){
     segs.splice(it.idx, 1);
@@ -712,6 +714,7 @@ $('saveBtn').addEventListener('click', ()=>{
   const added = currentItems.map((it, i) => {
     const n = nutr(it.food, it.g);
     if (it.chosen) DB.learned[norm(it.p.name)] = it.food.id;
+    if (misheard[it.key]) DB.learned[norm(misheard[it.key])] = it.food.id;
     return {id: now.toString(36) + i + Math.random().toString(36).slice(2,6), ts: now, meal,
       text: cleanSaid(it.seg.text), name: it.food.name, foodId: it.food.id, g: Math.round(it.g*10)/10, label: it.label,
       k100: it.food.k, f100: it.food.f, p100: it.food.p, c100: it.food.c,
@@ -719,7 +722,7 @@ $('saveBtn').addEventListener('click', ()=>{
   });
   list.push(...added);
   saveDB();
-  $('txt').value = ''; overrides = {}; currentItems = [];
+  $('txt').value = ''; overrides = {}; misheard = {}; currentItems = [];
   renderItems(); renderBilanz(); renderList(); renderChips();
   $('status').textContent = '';
   toast(`${added.length === 1 ? '1 Eintrag' : added.length + ' Einträge'} in ${MEAL[meal].name} gespeichert ✓`, ()=>{
@@ -839,6 +842,18 @@ $('toToday').onclick = () => goDay(todayKey());
    ============================================================ */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null;
+// Von mehreren Hörvarianten die nehmen, in der die meisten Lebensmittel erkannt werden
+function knownScore(text){
+  let n = 0;
+  splitText(text).forEach(sg => { if (!sg.text.trim()) return; const p = parseSegment(sg.text, sg.mit); if (!p.name) return;
+    const c = matchFood(p.name); if (c.length && c[0].sc >= MATCH_MIN) n += 1 + c[0].sc/1000; else n -= 1; });
+  return n;
+}
+function bestAlternative(res){
+  let best = res[0].transcript, bs = knownScore(best);
+  for (let j=1; j<res.length; j++){ const t = res[j].transcript, sc = knownScore(t); if (sc > bs + 0.5){ best = t; bs = sc; } }
+  return best;
+}
 function setStatus(t, err){ $('status').textContent = t; $('status').classList.toggle('err', !!err); }
 function stopRec(){ if (rec){ try{ rec.stop(); }catch(e){} } }
 
@@ -846,14 +861,14 @@ function dictate({onText, onDone, onStart}){
   if (!SR){ setStatus('Spracheingabe wird hier nicht unterstützt – bitte das Mikrofon der Tastatur benutzen.', true); return null; }
   stopRec();
   const r = new SR();
-  r.lang = 'de-DE'; r.interimResults = true; r.continuous = false; r.maxAlternatives = 1;
+  r.lang = 'de-DE'; r.interimResults = true; r.continuous = false; r.maxAlternatives = 5;
   let finalText = '', gotAny = false;
   r.onstart = () => { onStart && onStart(); setStatus('Ich höre zu … einfach sprechen.'); };
   r.onresult = ev => {
     let interim = ''; finalText = '';
     for (let i=0; i<ev.results.length; i++){
-      const t = ev.results[i][0].transcript;
-      if (ev.results[i].isFinal) finalText += t; else interim += t;
+      const res = ev.results[i];
+      if (res.isFinal) finalText += bestAlternative(res); else interim += res[0].transcript;
     }
     gotAny = true;
     onText((finalText + interim).trim(), false);
