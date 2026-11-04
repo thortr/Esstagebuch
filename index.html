@@ -264,7 +264,7 @@ nav.tabs button.on{color:var(--pri)}
 <script src="foods.js"></script>
 <script>
 "use strict";
-const APP_VERSION = "1.4";
+const APP_VERSION = "1.6";
 /* ============================================================
    Grunddaten
    ============================================================ */
@@ -1062,37 +1062,63 @@ function openChooser(query, onPick, autoOnline, onCancel){
   if (autoOnline) onlineSearch(query, pick);
 }
 
+// Mehrere Server nacheinander probieren – fällt einer aus (Überlastung, Sperre), springt der nächste ein
+const OFF_FIELDS = 'code,product_name,product_name_de,brands,nutriments,serving_quantity';
+const OFF_SOURCES = [
+  q => 'https://search.openfoodfacts.org/search?page_size=25&langs=de,en&fields=' + OFF_FIELDS + '&q=' + encodeURIComponent(q),
+  q => 'https://world.openfoodfacts.org/cgi/search.pl?search_simple=1&action=process&json=1&page_size=25&lc=de&cc=de&fields=' + OFF_FIELDS + '&search_terms=' + encodeURIComponent(q),
+  q => 'https://de.openfoodfacts.org/cgi/search.pl?search_simple=1&action=process&json=1&page_size=25&fields=' + OFF_FIELDS + '&search_terms=' + encodeURIComponent(q),
+];
+async function fetchJson(url, ms){
+  const ctl = new AbortController(); const to = setTimeout(()=>ctl.abort(), ms);
+  try {
+    const r = await fetch(url, {signal: ctl.signal, cache: 'no-store'});
+    if (!r.ok) throw new Error('Server antwortet mit Fehler ' + r.status);
+    return await r.json();
+  } finally { clearTimeout(to); }
+}
+function offProducts(j){
+  const list = j.products || j.hits || [];
+  return list.map(p=>{
+    const n = p.nutriments || {};
+    let k = n['energy-kcal_100g']; if (k == null && n['energy_100g'] != null) k = n['energy_100g']/4.184;
+    let name = p.product_name_de || p.product_name || '';
+    if (typeof name === 'object') name = name.de || name.main || Object.values(name)[0] || '';
+    name = String(name).trim();
+    let brand = Array.isArray(p.brands) ? (p.brands[0]||'') : String(p.brands||'').split(',')[0];
+    if (!name || k == null || isNaN(+k)) return null;
+    return {name, brand:brand.trim(), k:+k, f:+(n.fat_100g||0), p:+(n.proteins_100g||0), c:+(n.carbohydrates_100g||0), serving: +p.serving_quantity || null, code:p.code};
+  }).filter(Boolean).slice(0,15);
+}
 async function onlineSearch(q, pick){
   const box = $('chOn');
   if (!q){ box.innerHTML = ''; return; }
   if (!navigator.onLine){ box.innerHTML = `<div class="small" style="color:var(--bad)">Kein Internet. Bitte „Neues Lebensmittel anlegen“ nutzen.</div>`; return; }
-  box.innerHTML = `<div class="small muted">Suche online nach „${esc(q)}“ …</div>`;
-  const ctl = new AbortController(); const to = setTimeout(()=>ctl.abort(), 15000);
-  try {
-    const url = 'https://world.openfoodfacts.org/cgi/search.pl?search_simple=1&action=process&json=1&page_size=25&lc=de&cc=de' +
-      '&fields=code,product_name,product_name_de,brands,nutriments,serving_quantity&search_terms=' + encodeURIComponent(q);
-    const r = await fetch(url, {signal: ctl.signal});
-    const j = await r.json();
-    const res = (j.products||[]).map(p=>{
-      const n = p.nutriments || {};
-      let k = n['energy-kcal_100g']; if (k == null && n['energy_100g'] != null) k = n['energy_100g']/4.184;
-      const name = (p.product_name_de || p.product_name || '').trim();
-      if (!name || k == null) return null;
-      return {name, brand:(p.brands||'').split(',')[0].trim(), k:+k, f:+(n.fat_100g||0), p:+(n.proteins_100g||0), c:+(n.carbohydrates_100g||0), serving: +p.serving_quantity || null, code:p.code};
-    }).filter(Boolean).slice(0,15);
-    if (!res.length){ box.innerHTML = `<div class="small muted">Online nichts gefunden. Anderen Begriff versuchen oder selbst anlegen.</div>`; return; }
-    box.innerHTML = `<div class="small muted" style="margin-bottom:6px">Online-Treffer (Werte pro 100 g):</div>` +
-      res.map((x,i)=>`<button class="opt" data-i="${i}"><span>${esc(x.name)}${x.brand?` <span class="small muted">· ${esc(x.brand)}</span>`:''}</span><span class="muted small">${fmt(x.k)} kcal</span></button>`).join('');
-    box.onclick = e => {
-      const b = e.target.closest('.opt'); if (!b) return;
-      const x = res[+b.dataset.i];
-      const fd = addCustom({name: x.brand ? `${x.name} (${x.brand})` : x.name, aliases:[x.name, x.brand ? `${x.name} ${x.brand}` : x.name, q],
-        k:r1(x.k), f:r1(x.f), p:r1(x.p), c:r1(x.c), u: x.serving ? {st:x.serving} : {}, src:'off'});
-      pick(fd);
-    };
-  } catch(e){
-    box.innerHTML = `<div class="small" style="color:var(--bad)">Online-Suche nicht möglich (${esc(e.name==='AbortError'?'Zeitüberschreitung':e.message)}).</div>`;
-  } finally { clearTimeout(to); }
+  const errors = []; let res = null;
+  for (let i=0; i<OFF_SOURCES.length && res === null; i++){
+    box.innerHTML = `<div class="small muted">Suche online nach „${esc(q)}“ …${i ? ` (Versuch ${i+1} von ${OFF_SOURCES.length})` : ''}</div>`;
+    try { res = offProducts(await fetchJson(OFF_SOURCES[i](q), 12000)); }
+    catch(e){ errors.push(e.name === 'AbortError' ? 'Zeitüberschreitung' : e.message); }
+  }
+  if (res === null){
+    box.innerHTML = `<div class="small" style="color:var(--bad)"><b>Online-Suche hat nicht geklappt.</b><br>
+      Die Datenbank Open Food Facts ist nicht erreichbar. Häufige Gründe: Server überlastet oder zu viele Suchen über dieselbe Internet-Adresse (im Mobilfunk teilen sich viele eine Adresse) – in ein paar Minuten nochmal versuchen oder im WLAN,
+      ein Werbeblocker oder „Privates DNS“ in den Android-Einstellungen blockiert die Seite, oder das WLAN/Mobilnetz ist schwach.<br>
+      <span class="muted">(${esc(errors.join(' · '))})</span></div>
+      <button class="btn big" id="chRetry" style="margin-top:8px">↻ Nochmal versuchen</button>`;
+    $('chRetry').onclick = () => onlineSearch(q, pick);
+    return;
+  }
+  if (!res.length){ box.innerHTML = `<div class="small muted">Online nichts gefunden. Anderen Begriff versuchen oder selbst anlegen.</div>`; return; }
+  box.innerHTML = `<div class="small muted" style="margin-bottom:6px">Online-Treffer (Werte pro 100 g):</div>` +
+    res.map((x,i)=>`<button class="opt" data-i="${i}"><span>${esc(x.name)}${x.brand?` <span class="small muted">· ${esc(x.brand)}</span>`:''}</span><span class="muted small">${fmt(x.k)} kcal</span></button>`).join('');
+  box.onclick = e => {
+    const b = e.target.closest('.opt'); if (!b) return;
+    const x = res[+b.dataset.i];
+    const fd = addCustom({name: x.brand ? `${x.name} (${x.brand})` : x.name, aliases:[x.name, x.brand ? `${x.name} ${x.brand}` : x.name, q],
+      k:r1(x.k), f:r1(x.f), p:r1(x.p), c:r1(x.c), u: x.serving ? {st:x.serving} : {}, src:'off'});
+    pick(fd);
+  };
 }
 
 function addCustom(c){

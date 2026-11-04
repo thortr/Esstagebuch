@@ -103,6 +103,14 @@ Schinken|Kochschinken|gekochter Schinken|Hinterschinken;110;3.5;19;1;sc=25;m=25
 Rohschinken|Schinken roh|Serrano|Parmaschinken|Schwarzwälder Schinken|Katenschinken;230;12;30;0.5;sc=15;m=20
 Putenaufschnitt|Putenbrust Aufschnitt|Geflügelaufschnitt|Hähnchenbrustaufschnitt;105;2;21;1;sc=20;m=20
 Speck|Bacon|Frühstücksspeck;400;38;13;0;sc=10;m=20
+Kassler|Kasseler|Kasselerbraten|Kassler Braten|Kasslerkotelett|Kassler Kotelett|Kasseler Kotelett;140;7;19;0.5;po=150;sc=60;st=150
+Kassleraufschnitt|Kasseler Aufschnitt|Kassler Aufschnitt;110;4;18;1;sc=20;m=25
+Schweinebraten|Krustenbraten|Schweinshaxe|Schweinenacken|Nackensteak;190;11;23;0;po=150;sc=60
+Rinderbraten|Sauerbraten|Tafelspitz;150;6;23;2;po=150;sc=60
+Rinderroulade|Roulade|Rouladen;160;9;17;3;st=180
+Weißwurst|Weisswurst;280;25;11;0.5;st=80
+Fleischsalat;300;28;7;4;el=30;po=100;m=50
+Eiersalat;200;17;8;2;el=30;po=100;m=50
 Leberkäse|Fleischkäse;300;27;12;1;sc=100;st=100
 Gulasch|Rindergulasch;130;7;15;2;po=250
 Chili con Carne|Chili;110;4.5;8;9;po=350
