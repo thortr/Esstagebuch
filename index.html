@@ -245,7 +245,7 @@ nav.tabs button.on{color:var(--pri)}
       <button class="btn big" id="addCustom" style="margin-top:6px">＋ Lebensmittel anlegen</button>
     </div>
     <div class="card small muted">
-      <b>Hinweis:</b> Die Nährwerte sind Richtwerte pro 100 g aus einer eingebauten Tabelle (ca. 270 Lebensmittel). Für Markenprodukte lieber „Online suchen“ nutzen oder das Etikett als eigenes Lebensmittel anlegen – die App merkt sich das.<br><br>
+      <b>Hinweis:</b> Die Nährwerte sind Richtwerte pro 100 g aus einer eingebauten Tabelle. Gebratenes und Salate sind <b>ohne Brat- bzw. Salatöl</b> gerechnet – Öl, Butter oder Dressing bitte extra eintragen (z. B. „1 EL Olivenöl“). Für Markenprodukte lieber „Online suchen“ nutzen oder das Etikett als eigenes Lebensmittel anlegen – die App merkt sich das.<br><br>
       Die Spracheingabe nutzt die Spracherkennung von Chrome und braucht dafür meist Internet. Alles andere läuft ohne Internet.<br><br>
       <span id="version"></span>
     </div>
@@ -264,7 +264,7 @@ nav.tabs button.on{color:var(--pri)}
 <script src="foods.js"></script>
 <script>
 "use strict";
-const APP_VERSION = "1.3";
+const APP_VERSION = "1.4";
 /* ============================================================
    Grunddaten
    ============================================================ */
@@ -477,7 +477,7 @@ function matchFood(name){
   const learnedId = DB.learned[qn];
   for (const fd of allFoods()){
     if (fd.id === learnedId) { put(fd, 120); continue; }
-    const bonus = fd.id.startsWith('c:') ? 3 : 0;
+    const bonus = fd.id.startsWith('c:') ? 25 : 0;   // eigene Lebensmittel haben Vorrang
     fd._n.forEach((an, i) => {
       const as = fd._s[i]; let sc = 0;
       if (an === qn) sc = 100;
@@ -1105,25 +1105,36 @@ function addCustom(c){
 function openFoodForm(pre, onSave, onCancel, editId){
   const v = (x) => x == null ? '' : x;
   modal(`<h3>${editId ? 'Lebensmittel bearbeiten' : 'Neues Lebensmittel'}</h3>
-    <div class="small muted">Werte pro 100 g (bzw. 100 ml) – stehen auf der Verpackung.</div>
     <label class="f">Name</label><input class="t" id="cfN" value="${esc(v(pre.name))}">
+    <label class="f">Die Werte gelten für</label>
+    <div class="grid2" id="cfPer"><button class="btn" data-per="100">100 g / 100 ml</button><button class="btn ghost" data-per="st">1 Stück / Portion</button></div>
+    <div class="small muted" id="cfPerHint" style="margin-top:6px">Wie auf der Verpackung: Werte pro 100 g.</div>
     <div class="grid2">
       <div><label class="f">Kalorien (kcal)</label><input class="t" id="cfK" type="number" inputmode="decimal" value="${v(pre.k)}"></div>
       <div><label class="f">Fett (g)</label><input class="t" id="cfF" type="number" inputmode="decimal" value="${v(pre.f)}"></div>
       <div><label class="f">Eiweiß (g)</label><input class="t" id="cfP" type="number" inputmode="decimal" value="${v(pre.p)}"></div>
       <div><label class="f">Kohlenhydrate (g)</label><input class="t" id="cfC" type="number" inputmode="decimal" value="${v(pre.c)}"></div>
     </div>
-    <label class="f">1 Stück / Portion wiegt (g) – optional</label><input class="t" id="cfS" type="number" inputmode="decimal" value="${v(pre.u && (pre.u.st||pre.u.po))}">
+    <label class="f" id="cfSL">1 Stück / Portion wiegt (g) – optional</label><input class="t" id="cfS" type="number" inputmode="decimal" value="${v(pre.u && (pre.u.st||pre.u.po))}">
     <div class="sheetbtns"><button class="btn ghost" id="cfCancel">Abbrechen</button><button class="btn pri" id="cfOk">Speichern</button></div>`);
   $('cfN').focus();
+  let per = '100';
+  $('cfPer').onclick = e => { const b = e.target.closest('[data-per]'); if (!b) return; per = b.dataset.per;
+    $('cfPer').querySelectorAll('button').forEach(x => x.className = 'btn' + (x.dataset.per === per ? '' : ' ghost'));
+    $('cfPerHint').textContent = per === 'st' ? 'Werte für 1 Stück bzw. 1 Portion, z. B. 1 Spiegelei = 80 kcal.' : 'Wie auf der Verpackung: Werte pro 100 g.'; };
   $('cfCancel').onclick = () => { closeModal(); onCancel && onCancel(); };
   $('cfOk').onclick = () => {
     const num = id => { const x = parseFloat(String($(id).value).replace(',','.')); return isNaN(x) ? null : x; };
     const name = $('cfN').value.trim(), k = num('cfK');
     if (!name){ alert('Bitte einen Namen eingeben.'); return; }
     if (k == null){ alert('Bitte mindestens die Kalorien pro 100 g eingeben.'); return; }
-    const s = num('cfS');
-    const data = {name, k, f:num('cfF')||0, p:num('cfP')||0, c:num('cfC')||0, u: s ? {st:s} : {}};
+    let s = num('cfS'), f = num('cfF')||0, pr = num('cfP')||0, c = num('cfC')||0, kk = k;
+    if (per === 'st'){
+      // pro Stück eingegeben -> auf 100 g umrechnen (ohne Gewicht: 1 Stück = 100 g rechnerisch)
+      const w = s || 100; const fac = 100 / w;
+      kk = r1(k*fac); f = r1(f*fac); pr = r1(pr*fac); c = r1(c*fac); s = w;
+    }
+    const data = {name, k:kk, f, p:pr, c, u: s ? {st:s} : {}};
     let fd;
     if (editId){
       const c = DB.custom.find(x=>x.id===editId);

@@ -3,6 +3,7 @@
 // Portionsgrößen (in g/ml): st=Stück sc=Scheibe el=Esslöffel tl=Teelöffel gl=Glas ta=Tasse
 // be=Becher po=Portion hv=Handvoll ku=Kugel fl=Flasche do=Dose m=Menge bei "mit …" ohne Mengenangabe
 // Kohlenhydrate nach EU-Kennzeichnung (ohne Ballaststoffe).
+// Gebratenes/Salate OHNE Brat- bzw. Salatöl – das Öl wird separat eingetragen.
 const FOOD_DATA = `
 Vollkornbrot|Schwarzbrot|Roggenvollkornbrot|Roggenbrot;215;1.2;7;41;sc=50
 Mischbrot|Brot|Graubrot|Bauernbrot|Sauerteigbrot;230;1.1;6.5;47;sc=45
@@ -36,7 +37,7 @@ Vollkornnudeln;140;1;6;26;po=220
 Spätzle;160;2;6;29;po=200
 Gnocchi;140;0.5;3.5;30;po=250
 Kartoffeln|Kartoffel|Salzkartoffeln|Pellkartoffeln|Salzkartoffel|Pellkartoffel|Ofenkartoffel;72;0.1;2;15;st=80;po=200
-Bratkartoffeln;150;7;2.5;19;po=200
+Bratkartoffeln (ohne Bratfett)|Bratkartoffeln;80;0.1;2.2;17;po=200
 Pommes|Pommes frites|Fritten;290;15;3.5;35;po=150
 Kartoffelpüree|Kartoffelbrei|Püree|Kartoffelpüree;90;3.5;2;13;po=200
 Kartoffelsalat;130;7;1.8;14;po=200
@@ -82,9 +83,9 @@ Saure Sahne;115;10;3;3.6;el=15;m=20
 Schmand;240;24;2.5;3.4;el=15;m=20
 Crème fraîche|Creme fraiche;300;30;2.5;2.5;el=15;m=20
 Ei|Eier|Hühnerei|gekochtes Ei|Frühstücksei|hartes Ei|weiches Ei|Hühnereier;145;10;12.5;0.7;st=58
-Rührei|Rühreier;155;11.5;10.5;1.5;po=120
-Spiegelei|Spiegeleier;190;15;13;0.5;st=60
-Omelett|Omelette;155;11.5;11;1.5;st=150
+Rührei (ohne Bratfett)|Rührei|Rühreier;145;10;12.5;0.8;po=120
+Spiegelei (ohne Bratfett)|Spiegelei|Spiegeleier;145;10;12.5;0.7;st=58
+Omelett (ohne Bratfett)|Omelett|Omelette;145;10;12.5;0.8;st=130
 Hähnchenbrust|Hühnerbrust|Hähnchenbrustfilet|Hähnchenfilet|Hähnchen|Huhn|Hühnchen|Hühnerfleisch|Chicken;110;1.5;23.5;0;po=150;st=150
 Hähnchenschenkel|Hähnchenkeule|Hühnerschenkel|Chicken Wings;190;12;19;0;st=150
 Putenbrust|Pute|Putenschnitzel|Putenfleisch|Truthahn;105;1;24;0;po=150;st=150
@@ -92,7 +93,7 @@ Hackfleisch|Hack|gemischtes Hack|Gehacktes;260;21;18;0;po=125
 Rinderhack|Rinderhackfleisch;250;20;18;0;po=125
 Rindersteak|Steak|Rinderfilet|Rindfleisch|Hüftsteak|Rumpsteak;125;4;21;0;po=200;st=200
 Schweineschnitzel|Schnitzel|Schweinefleisch|Schweinefilet|Kotelett|Schweinesteak;110;2;22;0;po=150;st=150
-Wiener Schnitzel|paniertes Schnitzel|Schnitzel paniert;230;13;18;10;st=150
+Wiener Schnitzel (ohne Bratfett)|Wiener Schnitzel|paniertes Schnitzel|Schnitzel paniert;165;4;20;11;st=150
 Frikadelle|Bulette|Fleischpflanzerl|Fleischküchle|Frikadellen|Hackfleischbällchen;240;16;15;8;st=80
 Bratwurst|Rostbratwurst|Nürnberger;300;26;14;1;st=120
 Wiener Würstchen|Wiener|Würstchen|Frankfurter|Bockwurst|Wienerle;270;24;13;0.5;st=50
@@ -113,7 +114,7 @@ Räucherlachs|geräucherter Lachs|Graved Lachs;180;10;22;0;sc=20;m=30;po=50
 Thunfisch|Thunfisch Dose;110;1;25;0;do=150;po=150;m=50
 Forelle|Räucherforelle;110;4;20;0;po=125;st=125
 Fischfilet|Kabeljau|Seelachs|Dorsch|Pangasius|Rotbarsch|Scholle;80;0.7;18;0;po=150;st=150
-Fischstäbchen;200;9;13;17;st=30
+Fischstäbchen (ohne Bratfett)|Fischstäbchen;185;8;13;16;st=30
 Garnelen|Shrimps|Krabben|Scampi|Krevetten;80;1;18;0;po=100
 Matjes|Hering|Bismarckhering|Rollmops;220;17;16;1;st=60
 Tomate|Tomaten|Cocktailtomaten|Kirschtomaten|Cherrytomaten;18;0.2;0.9;2.6;st=80;po=150
@@ -127,7 +128,7 @@ Zucchini;20;0.4;1.5;2;st=200;po=200
 Aubergine|Auberginen;20;0.2;1.2;2.5;st=300;po=200
 Spinat|Blattspinat|Rahmspinat;23;0.4;2.9;0.6;po=200
 Salat|Blattsalat|Kopfsalat|grüner Salat|Eisbergsalat|Feldsalat|Römersalat|Salatblätter;14;0.2;1.2;1.5;po=80;hv=20
-Gemischter Salat|Salatteller|Beilagensalat;45;3;1.2;3;po=200
+Gemischter Salat (ohne Dressing)|Gemischter Salat|Salatteller|Beilagensalat;17;0.2;1.2;2.5;po=200
 Rucola;25;0.7;2.6;2;po=40;hv=20
 Zwiebel|Zwiebeln|Röstzwiebeln;28;0.2;1.2;5;st=80;el=10;m=20
 Champignons|Pilze|Pfifferlinge|Champignon;22;0.3;3;0.6;po=150;st=15
@@ -145,7 +146,7 @@ Lauch|Porree;24;0.3;2.2;3.3;st=200;po=150
 Sellerie|Staudensellerie;18;0.2;1.2;2.2;st=40;po=100
 Avocado;180;17;2;3.6;st=150
 Oliven;140;13.5;1;1.5;st=4;hv=30;m=20
-Gemüse|Mischgemüse|Gemüsepfanne|Ofengemüse|Wokgemüse;40;0.5;2.5;6;po=200
+Gemüse (ohne Öl)|Gemüse|Mischgemüse|Gemüsepfanne|Ofengemüse|Wokgemüse;30;0.3;2;5;po=200
 Apfel|Äpfel;54;0.2;0.3;11.5;st=150
 Banane|Bananen;93;0.2;1.1;20;st=120
 Orange|Apfelsine|Orangen;45;0.2;1;9;st=180
@@ -201,7 +202,7 @@ Salzstangen|Salzbrezeln|Cracker;380;3;10;75;hv=25;po=30
 Müsliriegel|Proteinriegel|Riegel|Getreideriegel;410;13;6;65;st=25
 Pudding|Vanillepudding|Schokopudding|Grießbrei|Milchreis;110;3;3.3;17;be=125;po=150
 Berliner|Krapfen|Pfannkuchen Berliner|Donut;360;15;6.5;48;st=70
-Pfannkuchen|Eierkuchen|Crêpe|Crepe|Palatschinken|Pancakes;220;10;8;24;st=80
+Pfannkuchen (ohne Bratfett)|Pfannkuchen|Eierkuchen|Crêpe|Crepe|Palatschinken|Pancakes;175;5;8;24;st=80
 Waffel|Waffeln;380;20;6;44;st=40
 Kaffee|Kaffee schwarz|Espresso|Filterkaffee|schwarzer Kaffee;2;0;0.2;0.3;ta=150;be=250
 Cappuccino;40;2;2;3;ta=200;be=300
@@ -238,11 +239,11 @@ Kürbissuppe|Cremesuppe;55;3;1;6;po=300
 Curry|Hähnchen Curry|Hühnchen Curry|Chicken Curry|Gemüsecurry;130;6;10;8;po=350
 Ravioli|Ravioli Dose|Tortellini;85;2.5;3;12;po=400
 Maultaschen|Maultasche;170;6;8;21;st=60;po=250
-Kaiserschmarrn;220;9;7;28;po=300
+Kaiserschmarrn (ohne Bratfett)|Kaiserschmarrn;190;6.5;7.5;26;po=300
 Wrap|Tortilla Wrap;220;6;8;34;st=250
 Sandwich|Belegtes Brötchen|Käsebrötchen|Schinkenbrötchen;240;9;11;28;st=150
 Toast Hawaii;210;9;12;20;st=150
-Olivenöl|Öl|Rapsöl|Sonnenblumenöl|Speiseöl|Leinöl|Kokosöl;880;99.8;0;0;el=10;tl=4;m=10
+Öl (Oliven-, Raps-, Sonnenblumenöl …)|Öl|Olivenöl|Rapsöl|Sonnenblumenöl|Speiseöl|Leinöl|Kokosöl;880;99.8;0;0;el=10;tl=4;m=10
 Mayonnaise|Mayo|Remoulade;680;75;1;3;el=15;tl=5;m=15
 Ketchup|Tomatenketchup|Curryketchup;100;0.1;1.2;23;el=15;tl=5;m=15
 Senf;70;4;6;2;tl=5;el=12;m=5
