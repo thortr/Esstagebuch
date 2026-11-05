@@ -158,6 +158,12 @@ nav.tabs button.on{color:var(--pri)}
 <main>
   <!-- ===================== HEUTE ===================== -->
   <section id="tab-heute">
+    <div class="small muted hidden" id="ownerLine" style="text-align:center;margin-bottom:4px"></div>
+    <div class="card hidden" id="ownerAsk">
+      <div style="font-weight:700">Wessen Tagebuch ist das?</div>
+      <div class="small muted" style="margin:4px 0 8px">Der Name steht oben in der App und in den Exportdateien – so werden die Dateien von zwei Personen nicht verwechselt.</div>
+      <div class="row"><input class="t grow" id="ownerAskInp" placeholder="Vorname"><button class="btn pri" id="ownerAskOk">OK</button></div>
+    </div>
     <div class="datebar">
       <button class="navbtn" id="prevDay" aria-label="Tag zurück">‹</button>
       <div class="datetitle" id="dateTitle"></div>
@@ -168,6 +174,7 @@ nav.tabs button.on{color:var(--pri)}
       <button id="toToday">Zu heute</button>
     </div>
 
+    <div class="card hidden" id="closeNote" style="border:2px solid var(--pri);background:var(--pri-soft)"></div>
     <div class="card" id="bilanzCard">
       <div class="bilanz" id="bilanz"></div>
     </div>
@@ -208,6 +215,10 @@ nav.tabs button.on{color:var(--pri)}
 
   <!-- ===================== MEHR ===================== -->
   <section id="tab-mehr" class="hidden">
+    <div class="card">
+      <h2>Name</h2>
+      <div class="row"><input class="t grow" id="ownerInp" placeholder="Vorname"><button class="btn pri" id="ownerSave">Speichern</button></div>
+    </div>
     <div class="card stack">
       <h2>Daten exportieren</h2>
       <div class="small muted">Eine Zeile pro Tag mit Kalorien, Fett, Eiweiß und Kohlenhydraten – passend zum Zusammenführen mit den Gewichtsdaten in Excel.</div>
@@ -220,6 +231,8 @@ nav.tabs button.on{color:var(--pri)}
       <div class="small muted">Die Daten liegen nur auf diesem Handy. Eine Sicherung schützt vor Verlust, z. B. wenn Chrome-Daten gelöscht werden. <b id="backupInfo"></b></div>
       <button class="btn big" id="backupBtn">🛟 Sicherung erstellen</button>
       <button class="btn ghost big" id="restoreBtn">Sicherung einlesen</button>
+      <button class="btn ghost big" id="csvImpBtn">CSV-Export wieder einlesen</button>
+      <input type="file" id="csvImpFile" accept=".csv,text/csv,text/comma-separated-values,text/plain" class="hidden">
       <input type="file" id="restoreFile" accept=".json,application/json" class="hidden">
     </div>
     <div class="card">
@@ -264,7 +277,7 @@ nav.tabs button.on{color:var(--pri)}
 <script src="foods.js"></script>
 <script>
 "use strict";
-const APP_VERSION = "1.6";
+const APP_VERSION = "1.7";
 /* ============================================================
    Grunddaten
    ============================================================ */
@@ -343,18 +356,94 @@ BASE_FOODS.forEach(indexFood);
    Speicher
    ============================================================ */
 const KEY = 'esstagebuch_v1';
-let DB = loadDB();
-function loadDB(){
-  let d = null;
-  try { d = JSON.parse(localStorage.getItem(KEY)); } catch(e) {}
+/* Sicher speichern:
+   - Jede App-Instanz (Startbildschirm-App, Chrome-Tab, im Hintergrund vergessene alte Instanz)
+     liest vor dem Schreiben den aktuellen Stand und FÜHRT ZUSAMMEN statt zu überschreiben.
+   - Gelöschtes wird als „gelöscht“ vermerkt, damit es nicht wieder auftaucht.
+   - Zweite Kopie in IndexedDB als Reserve. */
+function blankDB(d){
   d = d || {};
   d.days = d.days || {}; d.custom = d.custom || []; d.learned = d.learned || {}; d.words = d.words || {}; d.goals = d.goals || {};
-  d.lastBackup = d.lastBackup || null;
+  d.deleted = d.deleted || {}; d.lastBackup = d.lastBackup || null; d.goalsTs = d.goalsTs || 0; d.seenClose = d.seenClose || ''; d.owner = d.owner || '';
   return d;
 }
+function readStored(){
+  let raw = null;
+  try { raw = localStorage.getItem(KEY); } catch(e) {}
+  if (!raw) return blankDB();
+  try { return blankDB(JSON.parse(raw)); }
+  catch(e){ try { localStorage.setItem(KEY + '_defekt_' + Date.now(), raw); } catch(_) {} return blankDB(); }
+}
+const loadDB = readStored;
+const tOf = x => x.mt || x.ts || 0;
+function mergeDB(a, b){            // a = älterer/anderer Stand, b = dieser Stand (gewinnt bei Gleichstand)
+  a = blankDB(a); b = blankDB(b);
+  const del = {...a.deleted, ...b.deleted};
+  const out = blankDB({deleted: del});
+  const dayKeys = new Set([...Object.keys(a.days), ...Object.keys(b.days)]);
+  for (const k of dayKeys){
+    const m = new Map();
+    for (const e of [...(a.days[k]||[]), ...(b.days[k]||[])]){
+      if (!e || del[e.id]) continue;
+      const ex = m.get(e.id);
+      if (!ex || tOf(e) >= tOf(ex)) m.set(e.id, e);
+    }
+    if (m.size) out.days[k] = [...m.values()].sort((x,y)=>x.ts-y.ts);
+  }
+  const cm = new Map();
+  for (const c of [...a.custom, ...b.custom]){ if (!c || del[c.id]) continue; const ex = cm.get(c.id); if (!ex || tOf(c) >= tOf(ex)) cm.set(c.id, c); }
+  out.custom = [...cm.values()];
+  for (const [k,v] of Object.entries({...a.learned, ...b.learned})) if (!del['l:'+k]) out.learned[k] = v;
+  for (const [k,v] of Object.entries({...a.words, ...b.words})) if (!del['w:'+k]) out.words[k] = v;
+  const g = (b.goalsTs >= a.goalsTs) ? b : a; out.goals = g.goals; out.goalsTs = g.goalsTs;
+  out.lastBackup = Math.max(a.lastBackup||0, b.lastBackup||0) || null;
+  out.seenClose = [a.seenClose, b.seenClose].sort().pop() || '';
+  out.owner = b.owner || a.owner || '';
+  return out;
+}
+let DB = readStored();
 function saveDB(){
+  DB = mergeDB(readStored(), DB);
   try { localStorage.setItem(KEY, JSON.stringify(DB)); }
-  catch(e){ alert('Speichern fehlgeschlagen: ' + e.message + '\nBitte eine Sicherung erstellen.'); }
+  catch(e){ alert('Speichern fehlgeschlagen: ' + e.message + '\nBitte unter „Export & mehr“ eine Sicherung erstellen.'); }
+  idbSave();
+}
+// Stand von außen auffrischen (andere Instanz hat gespeichert / App kommt in den Vordergrund)
+function refreshDB(){
+  const before = JSON.stringify(DB.days) + JSON.stringify(DB.custom);
+  DB = mergeDB(readStored(), DB);   // bei Gleichstand bleiben die Objekte dieser Instanz erhalten
+  if (JSON.stringify(DB.days) + JSON.stringify(DB.custom) !== before){ rebuildCustom(); renderAll(); }
+}
+const markDeleted = key => { DB.deleted[key] = Date.now(); };
+const unmarkDeleted = key => { delete DB.deleted[key]; };
+function setLearned(k, id){ DB.learned[k] = id; unmarkDeleted('l:'+k); }
+
+/* ---------- Reserve-Kopie in IndexedDB ---------- */
+function idbOpen(){
+  return new Promise((res, rej) => {
+    if (!window.indexedDB) return rej(new Error('kein IndexedDB'));
+    const r = indexedDB.open('esstagebuch', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('kv');
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  });
+}
+let idbTimer = null;
+function idbSave(){
+  clearTimeout(idbTimer);
+  idbTimer = setTimeout(async () => {
+    try { const db = await idbOpen(); db.transaction('kv','readwrite').objectStore('kv').put(JSON.stringify(DB), 'db'); } catch(e) {}
+  }, 300);
+}
+async function idbRestore(){
+  try {
+    const db = await idbOpen();
+    const raw = await new Promise((res, rej) => { const r = db.transaction('kv').objectStore('kv').get('db'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+    if (!raw) { idbSave(); return; }
+    const before = JSON.stringify(DB);
+    DB = mergeDB(JSON.parse(raw), DB);
+    if (JSON.stringify(DB) !== before){ saveDB(); rebuildCustom(); renderAll(); }
+    else idbSave();
+  } catch(e) {}
 }
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(()=>{});
 
@@ -575,7 +664,7 @@ function applyWords(text){
 function learnWord(wrong, right){
   wrong = (wrong||'').trim(); right = (right||'').trim();
   if (!wrong || !right || norm(wrong) === norm(right)) return;
-  DB.words[norm(wrong)] = {wrong, right};
+  DB.words[norm(wrong)] = {wrong, right}; unmarkDeleted('w:'+norm(wrong));
   saveDB(); renderWords();
   toast(`Gemerkt: „${wrong}“ wird künftig zu „${right}“ ✓`);
 }
@@ -733,12 +822,12 @@ $('items').addEventListener('change', e=>{
 });
 function pickFor(it, fd){
   if (!it.food){
-    DB.learned[it.p.name] = fd.id; saveDB();                   // unbekanntes Wort -> dieses Lebensmittel, auch künftig
+    setLearned(it.p.name, fd.id); saveDB();                   // unbekanntes Wort -> dieses Lebensmittel, auch künftig
     if (spoken && spoken.unknown.has(it.p.name)){              // kam aus der Spracheingabe: Wort im Text ersetzen
       const right = fd.name.replace(/\s*\(.*\)\s*$/, '');
       const wrong = spoken.unknown.get(it.p.name);
       learnWord(wrong, right);
-      const p2 = parseSegment(right, false); DB.learned[p2.name] = fd.id; saveDB();
+      const p2 = parseSegment(right, false); setLearned(p2.name, fd.id); saveDB();
       spoken.unknown.delete(it.p.name);
       replaceSeg(it, applyWords(it.seg.text.trim()));
       overrides[norm(applyWords(it.seg.text.trim()))] = {foodId: fd.id}; analyse();
@@ -781,7 +870,7 @@ $('saveBtn').addEventListener('click', ()=>{
   const list = DB.days[day] = DB.days[day] || [];
   const added = currentItems.map((it, i) => {
     const n = nutr(it.food, it.g);
-    if (it.chosen) DB.learned[norm(it.p.name)] = it.food.id;
+    if (it.chosen) setLearned(norm(it.p.name), it.food.id);
     return {id: now.toString(36) + i + Math.random().toString(36).slice(2,6), ts: now, meal,
       text: cleanSaid(it.seg.text), name: it.food.name, foodId: it.food.id, g: Math.round(it.g*10)/10, label: it.label,
       k100: it.food.k, f100: it.food.f, p100: it.food.p, c100: it.food.c,
@@ -793,12 +882,12 @@ $('saveBtn').addEventListener('click', ()=>{
   renderItems(); renderBilanz(); renderList(); renderChips();
   $('status').textContent = '';
   toast(`${added.length === 1 ? '1 Eintrag' : added.length + ' Einträge'} in ${MEAL[meal].name} gespeichert ✓`, ()=>{
-    DB.days[day] = (DB.days[day]||[]).filter(e=>!added.includes(e));
-    if (!DB.days[day].length) delete DB.days[day];
+    added.forEach(e => markDeleted(e.id));
     saveDB(); renderAll();
   });
 });
 const r1 = n => Math.round(n*10)/10;
+function findEntry(id){ for (const l of Object.values(DB.days)){ const x = l.find(y=>y.id===id); if (x) return x; } return null; }
 function cleanSaid(t){
   return t.replace(/\b(zum|zur|zu|als|beim)\s+(frühstück|mittagessen|mittag|abendessen|abendbrot|abend|snack)\b/gi,' ')
     .replace(/\b(ich\s+)?(habe|hab|hatte)(\s+ich)?\b/gi,' ').replace(/\b(gegessen|getrunken)\b/gi,' ')
@@ -830,6 +919,7 @@ function renderList(){
 $('list').addEventListener('click', e=>{ const b = e.target.closest('.entry'); if (b) openEntry(b.dataset.id); });
 
 function openEntry(id, state){
+  refreshDB();
   const list = DB.days[viewDate] || [];
   const e = list.find(x=>x.id === id); if (!e) return;
   let meal = state ? state.meal : e.meal, food = state ? state.food : null;
@@ -855,11 +945,9 @@ function openEntry(id, state){
     openChooser(e.name, fd => openEntry(id, {...keep, food: fd}), false, () => openEntry(id, keep));
   };
   $('eDel').onclick = () => {
-    const idx = list.indexOf(e); list.splice(idx,1);
-    if (!list.length) delete DB.days[viewDate];
-    saveDB(); closeModal(); renderAll();
     const day = viewDate;
-    toast(`„${e.name}“ gelöscht`, ()=>{ (DB.days[day] = DB.days[day]||[]).splice(idx,0,e); saveDB(); renderAll(); });
+    markDeleted(e.id); saveDB(); closeModal(); renderAll();
+    toast(`„${e.name}“ gelöscht`, ()=>{ unmarkDeleted(e.id); e.mt = Date.now(); (DB.days[day] = DB.days[day]||[]).push(e); saveDB(); renderAll(); });
   };
   $('eOk').onclick = () => {
     const g = parseFloat(String($('eG').value).replace(',','.'));
@@ -869,8 +957,9 @@ function openEntry(id, state){
     if (g !== e.g || food) e.label = `${fmtG(g)} g`;
     e.g = g; e.meal = meal;
     e.kcal = r1(e.k100*g/100); e.f = r1(e.f100*g/100); e.p = r1(e.p100*g/100); e.c = r1(e.c100*g/100);
+    e.mt = Date.now();
     saveDB(); closeModal(); renderAll();
-    toast('Eintrag geändert ✓', ()=>{ Object.assign(e, before); saveDB(); renderAll(); });
+    toast('Eintrag geändert ✓', ()=>{ const cur = findEntry(e.id) || e; Object.assign(cur, before, {mt: Date.now()}); saveDB(); renderAll(); });
   };
 }
 
@@ -881,7 +970,7 @@ function renderChips(){
   for (const [day, list] of Object.entries(DB.days)){
     if (day < cutoff) continue;
     for (const e of list){
-      const t = e.text.trim(); if (!t) continue;
+      const t = e.text.trim(); if (!t || e.foodId === 'csv') continue;
       const k = norm(t);
       const c = counts.get(k) || {t, n:0, meals:{}};
       c.n++; c.meals[e.meal] = (c.meals[e.meal]||0)+1; counts.set(k, c);
@@ -1164,7 +1253,7 @@ function openFoodForm(pre, onSave, onCancel, editId){
     let fd;
     if (editId){
       const c = DB.custom.find(x=>x.id===editId);
-      Object.assign(c, data, {aliases:[...new Set([name].concat((c.aliases||[]).filter(a=>a!==c.name)))]});
+      Object.assign(c, data, {mt: Date.now(), aliases:[...new Set([name].concat((c.aliases||[]).filter(a=>a!==c.name)))]});
       saveDB(); rebuildCustom(); renderCustom(); fd = foodById(editId);
     } else fd = addCustom({...data, aliases:[name]});
     closeModal(); onSave && onSave(fd);
@@ -1199,8 +1288,8 @@ $('customList').addEventListener('click', e=>{
   if (rm){
     const c = DB.custom.find(x=>x.id===rm.dataset.rm);
     if (!confirm(`„${c.name}“ aus der Liste entfernen?\n(Bereits eingetragene Mahlzeiten bleiben erhalten.)`)) return;
-    DB.custom = DB.custom.filter(x=>x!==c);
-    for (const k in DB.learned) if (DB.learned[k] === c.id) delete DB.learned[k];
+    DB.custom = DB.custom.filter(x=>x!==c); markDeleted(c.id);
+    for (const k in DB.learned) if (DB.learned[k] === c.id){ delete DB.learned[k]; markDeleted('l:'+k); }
     saveDB(); rebuildCustom(); renderCustom();
   }
 });
@@ -1209,7 +1298,7 @@ $('wordList').addEventListener('click', e=>{
   const b = e.target.closest('[data-wrm]'); if (!b) return;
   const w = DB.words[b.dataset.wrm];
   if (!confirm(`Korrektur „${w.wrong}“ → „${w.right}“ löschen?`)) return;
-  delete DB.words[b.dataset.wrm]; saveDB(); renderWords();
+  delete DB.words[b.dataset.wrm]; markDeleted('w:'+b.dataset.wrm); saveDB(); renderWords();
 });
 $('addCustom').onclick = () => openFoodForm({}, fd => toast(`„${fd.name}“ angelegt ✓`));
 
@@ -1279,14 +1368,15 @@ async function deliver(content, filename, mime, share){
   return true;
 }
 const stamp = () => todayKey();
+const who = () => DB.owner ? '_' + DB.owner.replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue').replace(/Ä/g,'Ae').replace(/Ö/g,'Oe').replace(/Ü/g,'Ue').replace(/ß/g,'ss').replace(/[^A-Za-z0-9]+/g,'-') : '';
 function hasData(){ if (!Object.keys(DB.days).length){ alert('Es sind noch keine Daten vorhanden.'); return false; } return true; }
-$('expDaysShare').onclick = () => hasData() && deliver(csvDays(), `Ernaehrung_Tageswerte_${stamp()}.csv`, 'text/csv;charset=utf-8', true);
-$('expDaysSave').onclick  = () => hasData() && deliver(csvDays(), `Ernaehrung_Tageswerte_${stamp()}.csv`, 'text/csv;charset=utf-8', false);
-$('expEntries').onclick   = () => hasData() && deliver(csvEntries(), `Ernaehrung_Eintraege_${stamp()}.csv`, 'text/csv;charset=utf-8', true);
+$('expDaysShare').onclick = () => hasData() && deliver(csvDays(), `Ernaehrung${who()}_Tageswerte_${stamp()}.csv`, 'text/csv;charset=utf-8', true);
+$('expDaysSave').onclick  = () => hasData() && deliver(csvDays(), `Ernaehrung${who()}_Tageswerte_${stamp()}.csv`, 'text/csv;charset=utf-8', false);
+$('expEntries').onclick   = () => hasData() && deliver(csvEntries(), `Ernaehrung${who()}_Eintraege_${stamp()}.csv`, 'text/csv;charset=utf-8', true);
 
 $('backupBtn').onclick = async () => {
-  const data = JSON.stringify({app:'esstagebuch', version:1, exported:new Date().toISOString(), days:DB.days, custom:DB.custom, learned:DB.learned, words:DB.words, goals:DB.goals});
-  const ok = await deliver(data, `Esstagebuch_Sicherung_${stamp()}.json`, 'application/json', true);
+  const data = JSON.stringify({app:'esstagebuch', version:1, exported:new Date().toISOString(), days:DB.days, custom:DB.custom, learned:DB.learned, words:DB.words, goals:DB.goals, owner:DB.owner});
+  const ok = await deliver(data, `Esstagebuch${who()}_Sicherung_${stamp()}.json`, 'application/json', true);
   if (ok){ DB.lastBackup = Date.now(); saveDB(); renderBackupInfo(); }
 };
 $('restoreBtn').onclick = () => $('restoreFile').click();
@@ -1295,11 +1385,12 @@ $('restoreFile').onchange = async e => {
   try {
     const j = JSON.parse(await f.text());
     if (j.app !== 'esstagebuch' || !j.days) throw new Error('Keine Esstagebuch-Sicherung');
+    refreshDB();
     let added = 0;
     for (const [k, list] of Object.entries(j.days)){
       const cur = DB.days[k] = DB.days[k] || [];
       const ids = new Set(cur.map(x=>x.id));
-      list.forEach(x=>{ if (!ids.has(x.id)){ cur.push(x); added++; } });
+      list.forEach(x=>{ if (!ids.has(x.id)){ unmarkDeleted(x.id); cur.push(x); added++; } });
       cur.sort((a,b)=>a.ts-b.ts);
     }
     const cids = new Set(DB.custom.map(c=>c.id));
@@ -1309,6 +1400,69 @@ $('restoreFile').onchange = async e => {
     saveDB(); rebuildCustom(); renderAll();
     alert(`Sicherung eingelesen: ${added} Einträge hinzugefügt (vorhandene bleiben unverändert).`);
   } catch(err){ alert('Die Datei konnte nicht gelesen werden: ' + err.message); }
+};
+/* ---------- CSV-Export wieder einlesen (Notfall-Wiederherstellung) ---------- */
+function parseCSV(text){
+  text = text.replace(/^\ufeff/, '');
+  const rows = []; let row = [], cell = '', q = false;
+  for (let i=0; i<text.length; i++){
+    const ch = text[i];
+    if (q){ if (ch === '"'){ if (text[i+1] === '"'){ cell += '"'; i++; } else q = false; } else cell += ch; continue; }
+    if (ch === '"') q = true;
+    else if (ch === ';'){ row.push(cell); cell = ''; }
+    else if (ch === '\n' || ch === '\r'){ if (ch === '\r' && text[i+1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = ''; }
+    else cell += ch;
+  }
+  if (cell || row.length){ row.push(cell); rows.push(row); }
+  return rows.filter(r => r.some(c => c.trim()));
+}
+const numDE = x => parseFloat(String(x||'0').replace(/\./g,'').replace(',', '.')) || 0;
+const deToKey = d => { const m = String(d).match(/(\d{1,2})\.(\d{1,2})\.(\d{4})/); return m ? `${m[3]}-${pad(+m[2])}-${pad(+m[1])}` : null; };
+const MEAL_BY_NAME = Object.fromEntries(MEALS.map(m=>[m.name, m.id]));
+$('csvImpBtn').onclick = () => $('csvImpFile').click();
+$('ownerAskOk').onclick = () => setOwner($('ownerAskInp').value);
+$('ownerSave').onclick = () => setOwner($('ownerInp').value);
+$('csvImpFile').onchange = async ev => {
+  const f = ev.target.files[0]; ev.target.value = ''; if (!f) return;
+  refreshDB();
+  const rows = parseCSV(await f.text()); const head = (rows.shift() || []).map(h=>h.trim());
+  const plan = [];   // {day, entry}
+  if (head[0] === 'Datum' && head[1] === 'Uhrzeit'){
+    // Einzeleinträge: fehlende Einträge wieder anlegen
+    const have = new Set();
+    Object.entries(DB.days).forEach(([k,l]) => l.forEach(e => have.add(k + '|' + e.text + '|' + Math.round(e.kcal))));
+    rows.forEach((r, i) => {
+      const day = deToKey(r[0]); if (!day) return;
+      const [hh, mm] = String(r[1]||'12:00').split(':').map(Number);
+      const kcal = numDE(r[7]), text = r[3] || r[4];
+      if (have.has(day + '|' + text + '|' + Math.round(kcal))) return;
+      const g = numDE(r[6]) || 100, d = keyToDate(day); d.setHours(hh||12, mm||0);
+      plan.push({day, entry:{id:'csv' + Date.now().toString(36) + i, ts:d.getTime(), mt:Date.now(), meal: MEAL_BY_NAME[r[2]] || 's',
+        text, name: r[4] || text, foodId:'csv', g, label: r[5] || (fmtG(g)+' g'),
+        kcal, f:numDE(r[8]), p:numDE(r[9]), c:numDE(r[10]),
+        k100: kcal/g*100, f100: numDE(r[8])/g*100, p100: numDE(r[9])/g*100, c100: numDE(r[10])/g*100}});
+    });
+  } else if (head[0] === 'Datum' && /Kalorien/.test(head[1]||'')){
+    // Tageswerte: was pro Mahlzeit fehlt, als „wiederhergestellt“ ergänzen
+    rows.forEach((r, i) => {
+      const day = deToKey(r[0]); if (!day) return;
+      const tot = {kcal:numDE(r[1]), f:numDE(r[2]), p:numDE(r[3]), c:numDE(r[4])}; if (!tot.kcal) return;
+      MEALS.forEach((m, j) => {
+        const want = numDE(r[5+j]); const cur = sumOf((DB.days[day]||[]).filter(e=>e.meal===m.id)).kcal;
+        const miss = want - cur; if (miss < 5) return;
+        const sh = miss / tot.kcal, d = keyToDate(day); d.setHours([8,12,18,15][j]);
+        plan.push({day, entry:{id:'csv' + Date.now().toString(36) + i + m.id, ts:d.getTime(), mt:Date.now(), meal:m.id,
+          text:'aus CSV wiederhergestellt', name:`${m.name} (wiederhergestellt)`, foodId:'csv', g:100, label:'Summe aus CSV',
+          kcal:r1(miss), f:r1(tot.f*sh), p:r1(tot.p*sh), c:r1(tot.c*sh), k100:r1(miss), f100:r1(tot.f*sh), p100:r1(tot.p*sh), c100:r1(tot.c*sh)}});
+      });
+    });
+  } else { alert('Das ist keine CSV-Datei aus dieser App.'); return; }
+  if (!plan.length){ alert('Nichts zu ergänzen – alle Werte aus der CSV sind schon in der App.'); return; }
+  const byDay = {}; plan.forEach(x => { byDay[x.day] = (byDay[x.day]||0) + x.entry.kcal; });
+  const txt = Object.entries(byDay).sort().map(([k,v]) => `${dShort(k)}: +${fmt(v)} kcal`).join('\n');
+  if (!confirm(`Folgendes fehlt in der App und wird ergänzt:\n\n${txt}\n\nFortfahren?`)) return;
+  plan.forEach(x => (DB.days[x.day] = DB.days[x.day] || []).push(x.entry));
+  saveDB(); renderAll(); toast(`${plan.length === 1 ? '1 Eintrag' : plan.length + ' Einträge'} wiederhergestellt ✓`);
 };
 function renderBackupInfo(){
   if (!DB.lastBackup){ $('backupInfo').textContent = 'Noch keine Sicherung erstellt.'; return; }
@@ -1320,7 +1474,7 @@ function renderBackupInfo(){
 function renderGoals(){ $('gK').value = DB.goals.k||''; $('gF').value = DB.goals.f||''; $('gP').value = DB.goals.p||''; $('gC').value = DB.goals.c||''; }
 $('saveGoals').onclick = () => {
   const n = id => { const x = parseFloat($(id).value); return x > 0 ? x : null; };
-  DB.goals = {k:n('gK'), f:n('gF'), p:n('gP'), c:n('gC')}; saveDB(); renderBilanz(); toast('Ziele gespeichert ✓');
+  DB.goals = {k:n('gK'), f:n('gF'), p:n('gP'), c:n('gC')}; DB.goalsTs = Date.now(); saveDB(); renderBilanz(); toast('Ziele gespeichert ✓');
 };
 
 /* ============================================================
@@ -1351,7 +1505,26 @@ function showTab(name){
 }
 document.querySelectorAll('nav.tabs button').forEach(b=>b.onclick = ()=>showTab(b.dataset.tab));
 
-function renderAll(){ renderDate(); renderBilanz(); renderMeals(); renderList(); renderChips(); renderItems(); if (!$('tab-verlauf').classList.contains('hidden')) renderHistory(); }
+function renderCloseNote(){
+  const box = $('closeNote'); const t = todayKey();
+  const prev = Object.keys(DB.days).filter(k => k < t && DB.days[k].length).sort().pop();
+  if (viewDate !== t || !prev || DB.seenClose >= prev){ box.classList.add('hidden'); return; }
+  const sm = sumOf(DB.days[prev]);
+  box.innerHTML = `<div style="font-weight:700">✓ ${prev === addDays(t,-1) ? 'Gestern' : dShort(prev)} ist automatisch gespeichert</div>
+    <div class="small" style="margin-top:4px">${fmt(sm.kcal)} kcal · Fett ${fmt(sm.f)} g · Eiweiß ${fmt(sm.p)} g · KH ${fmt(sm.c)} g – steht im Verlauf und im Export. Nichts weiter zu tun.</div>
+    <button class="btn pri" id="closeOk" style="margin-top:8px">OK</button>`;
+  box.classList.remove('hidden');
+  $('closeOk').onclick = () => { DB.seenClose = prev; saveDB(); box.classList.add('hidden'); };
+}
+function renderOwner(){
+  $('ownerLine').textContent = DB.owner ? `Esstagebuch von ${DB.owner}` : '';
+  $('ownerLine').classList.toggle('hidden', !DB.owner);
+  $('ownerAsk').classList.toggle('hidden', !!DB.owner || !!sessionSkipOwner);
+  if ($('ownerInp') && document.activeElement !== $('ownerInp')) $('ownerInp').value = DB.owner;
+}
+let sessionSkipOwner = false;
+function setOwner(v){ v = v.trim(); if (!v) { alert('Bitte einen Namen eingeben.'); return false; } DB.owner = v; saveDB(); renderOwner(); toast(`Name gespeichert: ${v} ✓`); return true; }
+function renderAll(){ renderOwner(); renderCloseNote(); renderDate(); renderBilanz(); renderMeals(); renderList(); renderChips(); renderItems(); if (!$('tab-verlauf').classList.contains('hidden')) renderHistory(); }
 
 /* ---------- Tageswechsel / Rückkehr in die App ---------- */
 function checkDay(){
@@ -1363,16 +1536,21 @@ function checkDay(){
 }
 document.addEventListener('visibilitychange', ()=>{
   if (document.hidden){ hiddenAt = Date.now(); return; }
+  refreshDB();
   checkDay();
   if (Date.now() - hiddenAt > 45*60*1000 && !$('txt').value.trim()){
     // längere Pause: zurück auf heute und passende Mahlzeit
     viewDate = todayKey(); selMeal = mealByTime(); mealTouched = false; renderAll();
   }
 });
-setInterval(checkDay, 60*1000);
+setInterval(()=>{ if (!document.hidden) refreshDB(); checkDay(); }, 60*1000);
+window.addEventListener('storage', e => { if (e.key === KEY) refreshDB(); });   // andere Instanz hat gespeichert
+window.addEventListener('pageshow', () => refreshDB());
+window.addEventListener('focus', () => refreshDB());
 
 $('version').textContent = `Version ${APP_VERSION} · ${BASE_FOODS.length} Lebensmittel eingebaut`;
 renderAll();
+idbRestore();
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>
