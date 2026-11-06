@@ -258,9 +258,10 @@ nav.tabs button.on{color:var(--pri)}
       <button class="btn big" id="addCustom" style="margin-top:6px">＋ Lebensmittel anlegen</button>
     </div>
     <div class="card small muted">
-      <b>Hinweis:</b> Die Nährwerte sind Richtwerte pro 100 g aus einer eingebauten Tabelle. Gebratenes und Salate sind <b>ohne Brat- bzw. Salatöl</b> gerechnet – Öl, Butter oder Dressing bitte extra eintragen (z. B. „1 EL Olivenöl“). Für Markenprodukte lieber „Online suchen“ nutzen oder das Etikett als eigenes Lebensmittel anlegen – die App merkt sich das.<br><br>
+      <b>Hinweis:</b> Die Nährwerte sind Richtwerte pro 100 g. Grundlage sind eine eingebaute Liste häufiger Lebensmittel mit üblichen Portionsgrößen und der Bundeslebensmittelschlüssel (über 7.000 Lebensmittel und Gerichte, mit „BLS“ gekennzeichnet). Gebratenes und Salate der eingebauten Liste sind <b>ohne Brat- bzw. Salatöl</b> gerechnet – Öl, Butter oder Dressing bitte extra eintragen (z. B. „1 EL Olivenöl“). Für Markenprodukte lieber „Online suchen“ nutzen oder das Etikett als eigenes Lebensmittel anlegen – die App merkt sich das.<br><br>
       Die Spracheingabe nutzt die Spracherkennung von Chrome und braucht dafür meist Internet. Alles andere läuft ohne Internet.<br><br>
-      <span id="version"></span>
+      <span id="version"></span><br><br>
+      Nährwertdaten: Max Rubner-Institut (2025): Bundeslebensmittelschlüssel (BLS), Version 4.0 – Deutsche Nährstoffdatenbank. Karlsruhe. DOI: 10.25826/Data20251217-134202-0. Lizenz: <a href="https://creativecommons.org/licenses/by/4.0/deed.de" target="_blank" rel="noopener">CC BY 4.0</a>. Übernommen: Energie, Fett, Protein, verfügbare Kohlenhydrate; gerundet.
     </div>
   </section>
 </main>
@@ -275,9 +276,10 @@ nav.tabs button.on{color:var(--pri)}
 <div id="toast" class="hidden"><span id="toastText"></span><button id="toastUndo">Rückgängig</button></div>
 
 <script src="foods.js"></script>
+<script src="bls.js"></script>
 <script>
 "use strict";
-const APP_VERSION = "1.7";
+const APP_VERSION = "1.9";
 /* ============================================================
    Grunddaten
    ============================================================ */
@@ -351,6 +353,34 @@ function indexFood(fd){
   return fd;
 }
 BASE_FOODS.forEach(indexFood);
+
+/* ---------- Bundeslebensmittelschlüssel (BLS 4.0) als große Ergänzung ---------- */
+// Zubereitungs-Varianten: Obst/Nüsse/Sprossen (F, H) meist roh, alles andere meist gegart gegessen
+const PREP_RANK_RAW  = {roh:0, frisch:1, natur:2, gekocht:3, gegart:4, gedaempft:5, geduenstet:6};
+const PREP_RANK_COOK = {gekocht:0, gegart:1, gedaempft:2, geduenstet:3, natur:4, frisch:5, roh:6};
+const BLS_FOODS = [];
+(function(){
+  if (typeof BLS_DATA !== 'string') return;
+  const baseBest = new Map();   // Grundname -> {food, rank}
+  BLS_DATA.trim().split('\n').forEach(line => {
+    const [code, name, k, f, p, c] = line.split(';');
+    const aliases = [name];
+    const noPar = name.replace(/\s*\([^)]*\)/g, '').trim();          // „Apfelstrudel (Mürbeteig)“ -> „Apfelstrudel“
+    if (noPar && noPar !== name) aliases.push(noPar);
+    const head = noPar.split(',')[0].trim();                          // „Skyr, Frischkäse …“ -> „Skyr“
+    if (head && head !== noPar) aliases.push(head);
+    const fd = {id:'bls:' + code, name, aliases, k:+k, f:+f, p:+p, c:+c, u:{}, bls:true};
+    BLS_FOODS.push(fd);
+    const w = head.split(' ');                                         // „Grünkohl gekocht“ -> Grundname „Grünkohl“
+    if (w.length === 2){
+      const ranks = /^[FH]/.test(code) ? PREP_RANK_RAW : PREP_RANK_COOK;
+      const r = ranks[norm(w[1])];
+      if (r !== undefined){ const cur = baseBest.get(w[0]); if (!cur || r < cur.rank) baseBest.set(w[0], {fd, rank:r}); }
+    }
+  });
+  baseBest.forEach(({fd}, base) => fd.aliases.push(base));
+  BLS_FOODS.forEach(indexFood);
+})();
 
 /* ============================================================
    Speicher
@@ -450,7 +480,7 @@ if (navigator.storage && navigator.storage.persist) navigator.storage.persist().
 let CUSTOM = [];
 function rebuildCustom(){ CUSTOM = DB.custom.map(c=>indexFood({...c, aliases:c.aliases||[c.name], u:c.u||{}})); }
 rebuildCustom();
-const allFoods = () => CUSTOM.concat(BASE_FOODS);
+const allFoods = () => CUSTOM.concat(BASE_FOODS, BLS_FOODS);
 const foodById = id => allFoods().find(f=>f.id===id);
 
 /* ============================================================
@@ -485,9 +515,9 @@ const nvText = n => `${fmt(n.kcal)} kcal · F ${fmt(n.f)} · E ${fmt(n.p)} · KH
 /* ============================================================
    Erkennung: Text -> Teile -> Menge + Lebensmittel
    ============================================================ */
-const SEP_RE = /\s*(?:(?<!\d),|,(?!\d)|;|\n|\+|&)\s*|\s+(?:und|mit|sowie|plus|dazu|außerdem|ausserdem|danach|dann|anschließend|anschliessend|sowie)\s+/gi;
+const SEP_RE = /\s*(?:(?<!\d),|,(?!\d)|(?<!\d)(?<!\bca)(?<!\bbzw)(?<!\betc)(?<!\bev)\.(?=\s|$)|\.(?=\s+\p{Lu})|;|\n|\+|&)\s*|\s+(?:und|mit|sowie|plus|dazu|außerdem|ausserdem|danach|dann|anschließend|anschliessend|sowie)\s+/giu;
 
-function splitText(text){
+function splitRaw(text){
   const segs = []; let last = 0, sep = '', m;
   SEP_RE.lastIndex = 0;
   while ((m = SEP_RE.exec(text))){
@@ -505,6 +535,112 @@ function splitText(text){
     s.mit = mit;
   });
   return segs;
+}
+
+/* ---------- Schlauere Zerlegung ----------
+   1. Innerhalb eines Teils mehrere Lebensmittel erkennen: „Roggenbrot 37 g Butter 10 g“, „Brot Butter Käse“
+   2. Teile ohne Lebensmittel (nur Menge) an das passende Nachbar-Lebensmittel hängen: „Roggenbrot, 37 g“ */
+function tokKind(n){
+  if (readNumber(n) !== null) return 'Q';
+  const m = n.match(/^(\d+(?:[.\/]\d+)?)([a-z]+)$/); if (m && UNIT_OF[m[2]]) return 'QU';
+  if (UNIT_OF[n] || n === 'voll' || n === 'hand') return 'U';
+  if (n in SIZE_WORDS || SMALL_WORDS.has(n)) return 'S';
+  if (FILLER.has(n)) return 'F';
+  return 'N';
+}
+function nameMatchScore(words){ const c = matchFood(words.join(' ')); return c.length ? c[0].sc : 0; }
+// Namensgruppe ggf. in mehrere Lebensmittel aufteilen (nur wenn jedes Stück klar erkannt wird)
+function partitionNames(toks){
+  if (toks.length < 2) return [toks];
+  const words = toks.map(t=>t.n);
+  if (nameMatchScore(words) >= 96) return [toks];
+  const parts = []; let i = 0;
+  while (i < toks.length){
+    let best = -1;
+    for (let j = toks.length; j > i; j--){ if (nameMatchScore(words.slice(i,j)) >= 90){ best = j; break; } }
+    if (best < 0) return [toks];
+    parts.push(toks.slice(i, best)); i = best;
+  }
+  return parts.length > 1 ? parts : [toks];
+}
+function splitItems(seg){
+  const text = seg.text, toks = [];
+  for (const m of text.matchAll(/[\p{L}\p{N}][\p{L}\p{N}.,%\/-]*/gu)){
+    const n = norm(m[0]); if (!n) continue;
+    toks.push({start:m.index, end:m.index + m[0].replace(/[.,]+$/,'').length, n, k:tokKind(n.split(' ')[0])});
+  }
+  // Gruppen bilden: Mengen (Zahl, Einheit, Größe) und Namen; Füllwörter überspringen
+  const groups = []; let prevQ = null;
+  for (const t of toks){
+    if (t.k === 'F') continue;
+    const isQ = t.k !== 'N';
+    const last = groups[groups.length-1];
+    // neue Mengengruppe, wenn nach einer Einheit wieder eine Zahl kommt („37 g 2 …“)
+    const newQ = isQ && last && last.type === 'Q' && (t.k === 'Q' || t.k === 'QU') && last.toks.some(x=>x.k==='U'||x.k==='QU');
+    if (last && last.type === (isQ ? 'Q' : 'N') && !newQ) last.toks.push(t);
+    else groups.push({type: isQ ? 'Q' : 'N', toks:[t]});
+  }
+  if (!groups.some(g=>g.type==='N')) return [seg];
+  // Namensgruppen ggf. aufteilen
+  const G = [];
+  groups.forEach(g => { if (g.type === 'N') partitionNames(g.toks).forEach(p => G.push({type:'N', toks:p})); else G.push(g); });
+  // Mengen den Lebensmitteln zuordnen
+  const style = G[0].type === 'Q' ? 'QN' : 'NQ';
+  const items = []; let pending = null;
+  const hasUnitQ = it => it.q.some(g => g.toks.some(x=>x.k==='U'||x.k==='QU'));
+  G.forEach((g, i) => {
+    if (g.type === 'N'){ items.push({groups: pending ? [pending, g] : [g], q: pending ? [pending] : []}); pending = null; return; }
+    const prev = items[items.length-1], nextIsN = G[i+1] && G[i+1].type === 'N';
+    const unitHere = g.toks.some(x=>x.k==='U'||x.k==='QU');
+    if (prev && (!prev.q.length || (unitHere && !hasUnitQ(prev) && !nextIsN)) && (style === 'NQ' || !nextIsN || !prev.q.length && !nextIsN)){
+      prev.groups.push(g); prev.q.push(g);
+    } else if (nextIsN) pending = g;
+    else if (prev){ prev.groups.push(g); prev.q.push(g); }
+  });
+  if (items.length < 2) return [seg];
+  // Text an den Grenzen zwischen den Lebensmitteln schneiden (Leerraum dazwischen wird Trenner)
+  const out = []; let from = 0, sep = seg.sep;
+  items.forEach((it, k) => {
+    const startNext = k + 1 < items.length ? Math.min(...items[k+1].groups.flatMap(g=>g.toks.map(t=>t.start))) : text.length;
+    let cut = startNext; while (cut > from && /\s/.test(text[cut-1])) cut--;
+    out.push({text: text.slice(from, cut), sep, mit: seg.mit});
+    sep = text.slice(cut, startNext); from = startNext;
+  });
+  return out;
+}
+
+function splitText(text){
+  const raw = splitRaw(text);
+  // 1) Teile intern aufteilen
+  let segs = [];
+  for (const sg of raw){
+    if (!sg.text.trim()){ segs.push(sg); continue; }
+    const parts = splitPositions(sg);
+    segs.push(...parts);
+  }
+  // 2) Teile nur mit Menge an Nachbarn hängen
+  const info = sg => { const p = parseSegment(sg.text, sg.mit); return {name: !!p.name, qty: p.qty !== null || p.unit !== null}; };
+  for (let i = 0; i < segs.length; i++){
+    if (!segs[i].text.trim()) continue;
+    const me = info(segs[i]); if (me.name || !me.qty) continue;
+    const prevI = i - 1, nextI = i + 1;
+    const pv = prevI >= 0 && segs[prevI].text.trim() ? info(segs[prevI]) : null;
+    const nx = nextI < segs.length && segs[nextI].text.trim() ? info(segs[nextI]) : null;
+    if (pv && pv.name && !pv.qty){
+      segs[prevI] = {...segs[prevI], text: segs[prevI].text + segs[i].sep + segs[i].text};
+      segs.splice(i, 1); i--;
+    } else if (nx && nx.name && !nx.qty){
+      segs[nextI] = {...segs[nextI], text: segs[i].text + segs[nextI].sep + segs[nextI].text, sep: segs[i].sep, mit: segs[i].mit};
+      segs.splice(i, 1); i--;
+    }
+  }
+  return segs;
+}
+// Teil an Zeichenpositionen aufteilen, so dass sich der Originaltext exakt wieder zusammensetzen lässt
+function splitPositions(sg){
+  const items = splitItems(sg);
+  if (items.length < 2) return [sg];
+  return items;
 }
 function joinSegs(segs){ return segs.map((s,i)=> (i ? s.sep : '') + s.text).join(''); }
 
@@ -543,6 +679,11 @@ function parseSegment(raw, isMit){
     if (FILLER.has(t)) continue;
     rest.push(t);
   }
+  // Genaue Gewichtsangabe gewinnt: „eine Scheibe Roggenbrot 37 g“ -> 37 g
+  for (let i=0; i<rest.length-1; i++){
+    const n = readNumber(rest[i]);
+    if (n !== null && /^\d/.test(rest[i]) && ABS_UNITS.has(UNIT_OF[rest[i+1]])){ qty = n; unit = UNIT_OF[rest[i+1]]; size = 1; rest.splice(i,2); break; }
+  }
   // Menge am Ende: "Milch 200 ml"
   if (qty === null && unit === null){
     for (let i=0; i<rest.length-1; i++){
@@ -566,10 +707,12 @@ function matchFood(name){
   const learnedId = DB.learned[qn];
   for (const fd of allFoods()){
     if (fd.id === learnedId) { put(fd, 120); continue; }
-    const bonus = fd.id.startsWith('c:') ? 25 : 0;   // eigene Lebensmittel haben Vorrang
+    // eigene Lebensmittel haben Vorrang, BLS-Einträge leicht nachrangig (kürzere = allgemeinere Bezeichnung bevorzugt)
+    const bonus = fd.id.startsWith('c:') ? 25 : fd.bls ? -6 - fd.name.length * 0.03 : 0;
     fd._n.forEach((an, i) => {
       const as = fd._s[i]; let sc = 0;
       if (an === qn) sc = 100;
+      else if (!qn.includes(' ') && an.replace(/ /g,'') === qn) sc = 98;   // „Matjes-Brötchen“ = „Matjesbrötchen“
       else if (as === qs) sc = 96;
       else if ((' '+qs+' ').includes(' '+as+' ') && as.length >= 3) sc = 72 + 20*as.length/qs.length;
       else if (qn.includes(an) && an.length >= 4) sc = 62 + 22*an.length/qn.length;
@@ -1140,7 +1283,7 @@ function openChooser(query, onPick, autoOnline, onCancel){
   const show = () => {
     const q = $('chQ').value;
     const res = q.trim() ? matchFood(q).slice(0,12).map(x=>x.fd) : CUSTOM.concat(BASE_FOODS).slice(0,12);
-    $('chRes').innerHTML = res.length ? res.map((fd,i)=>`<button class="opt" data-i="${i}"><span>${esc(fd.name)}${fd.id.startsWith('c:')?' <span class="small muted">(eigenes)</span>':''}</span><span class="muted small">${fmt(fd.k)} kcal/100 g</span></button>`).join('')
+    $('chRes').innerHTML = res.length ? res.map((fd,i)=>`<button class="opt" data-i="${i}"><span>${esc(fd.name)}${fd.id.startsWith('c:')?' <span class="small muted">(eigenes)</span>':fd.bls?' <span class="small muted">(BLS)</span>':''}</span><span class="muted small">${fmt(fd.k)} kcal/100 g</span></button>`).join('')
       : `<div class="small muted">Nichts Passendes in der eingebauten Liste.</div>`;
     $('chRes').onclick = e => { const b = e.target.closest('.opt'); if (b) pick(res[+b.dataset.i]); };
   };
@@ -1503,7 +1646,10 @@ function showTab(name){
   if (name === 'mehr'){ renderGoals(); renderWords(); renderCustom(); renderBackupInfo(); }
   window.scrollTo({top:0});
 }
-document.querySelectorAll('nav.tabs button').forEach(b=>b.onclick = ()=>showTab(b.dataset.tab));
+document.querySelectorAll('nav.tabs button').forEach(b=>b.onclick = ()=>{
+  showTab(b.dataset.tab);
+  if (b.dataset.tab === 'heute' && viewDate !== todayKey()) goDay(todayKey());   // „Heute“ heißt immer heute
+});
 
 function renderCloseNote(){
   const box = $('closeNote'); const t = todayKey();
@@ -1548,7 +1694,7 @@ window.addEventListener('storage', e => { if (e.key === KEY) refreshDB(); });   
 window.addEventListener('pageshow', () => refreshDB());
 window.addEventListener('focus', () => refreshDB());
 
-$('version').textContent = `Version ${APP_VERSION} · ${BASE_FOODS.length} Lebensmittel eingebaut`;
+$('version').textContent = `Version ${APP_VERSION} · ${BASE_FOODS.length} Lebensmittel mit Portionsgrößen + ${BLS_FOODS.length} aus dem BLS`;
 renderAll();
 idbRestore();
 
