@@ -279,7 +279,7 @@ nav.tabs button.on{color:var(--pri)}
 <script src="bls.js"></script>
 <script>
 "use strict";
-const APP_VERSION = "1.9";
+const APP_VERSION = "1.10";
 /* ============================================================
    Grunddaten
    ============================================================ */
@@ -954,8 +954,8 @@ $('items').addEventListener('click', e=>{
   if (act === 'del'){ replaceSeg(it, null); }
   else if (act === 'edit'){ editSegText(it); }
   else if (act === 'mic'){ dictateSeg(it, b); }
-  else if (act === 'choose'){ openChooser(it.p.name, fd=>pickFor(it, fd)); }
-  else if (act === 'online'){ openChooser(it.p.name, fd=>pickFor(it, fd), true); }
+  else if (act === 'choose'){ openChooser(rawName(it.seg.text, it.p.name) || it.p.name, fd=>pickFor(it, fd)); }
+  else if (act === 'online'){ openChooser(rawName(it.seg.text, it.p.name) || it.p.name, fd=>pickFor(it, fd), true); }
   else if (act === 'create'){ openFoodForm({name: capital(rawName(it.seg.text, it.p.name) || it.p.name)}, fd=>pickFor(it, fd)); }
 });
 $('items').addEventListener('change', e=>{
@@ -1271,10 +1271,37 @@ function dictateSeg(it, btn){
 /* ============================================================
    Auswahl / Suche / Online / Eigenes Lebensmittel
    ============================================================ */
+/* Suche für die Auswahl: findet auch Wortteile („käse“ -> Frischkäse, Schnittkäse …)
+   und nimmt Treffer, die nur zu einem Teil der Wörter passen („presso käse“ -> alles mit Käse) */
+function chooserSearch(q, limit){
+  const words = norm(q).split(' ').filter(w => w.length >= 3 && !FILLER.has(w) && readNumber(w) === null && !UNIT_OF[w]);
+  if (!words.length) return [];
+  const best = new Map();
+  matchFood(q).filter(x => x.sc >= 90).slice(0, 5).forEach((x, i) => best.set(x.fd, 1000 - i));   // sehr gute Gesamttreffer zuerst
+  const stems = words.map(stemWord);
+  for (const fd of allFoods()){
+    if (best.has(fd)) continue;
+    const text = ' ' + fd._n.join(' ') + ' ';
+    let hit = 0, sc = 0;
+    stems.forEach((st, i) => {
+      if (text.includes(' ' + words[i] + ' ')) { hit++; sc += 30; }               // ganzes Wort
+      else if (text.includes(' ' + st)) { hit++; sc += 22; }                       // Wortanfang
+      else if (st.length >= 4 && text.includes(st)) { hit++; sc += 15; }          // Wortteil („frischkaese“)
+    });
+    if (!hit) continue;
+    sc += hit === words.length ? 40 : 0;                                          // alle Wörter gefunden
+    sc += fd.id.startsWith('c:') ? 12 : fd.bls ? 0 : 6;                           // eigene / Portionsliste zuerst
+    if (stems.some(st => fd._n[0].startsWith(st))) sc += 25;                       // Name beginnt mit dem Suchwort
+    sc -= fd.name.length * 0.3;                                                   // kurze, allgemeine Namen zuerst
+    best.set(fd, sc);
+  }
+  return [...best.entries()].sort((a,b)=>b[1]-a[1]).slice(0, limit).map(x=>x[0]);
+}
 function openChooser(query, onPick, autoOnline, onCancel){
   modal(`<h3>Lebensmittel wählen</h3>
-    <input class="t" id="chQ" value="${esc(query)}" placeholder="Suchen …">
-    <div id="chRes" style="margin-top:10px"></div>
+    <input class="t" id="chQ" value="${esc(query)}" placeholder="Suchen, z. B. Frischkäse Kräuter">
+    <div class="small muted" id="chInfo" style="margin-top:6px"></div>
+    <div id="chRes" style="margin-top:8px"></div>
     <button class="btn big" id="chOnline" style="margin-top:6px">🌐 Online suchen (Open Food Facts)</button>
     <div id="chOn" style="margin-top:10px"></div>
     <button class="btn ghost big" id="chNew" style="margin-top:6px">＋ Neues Lebensmittel anlegen</button>
@@ -1282,9 +1309,11 @@ function openChooser(query, onPick, autoOnline, onCancel){
   const pick = fd => { closeModal(); onPick(fd); };
   const show = () => {
     const q = $('chQ').value;
-    const res = q.trim() ? matchFood(q).slice(0,12).map(x=>x.fd) : CUSTOM.concat(BASE_FOODS).slice(0,12);
+    const res = q.trim() ? chooserSearch(q, 40) : CUSTOM.concat(BASE_FOODS).slice(0,12);
+    $('chInfo').textContent = `Durchsucht: eigene Lebensmittel, Portionsliste und BLS (${fmt(allFoods().length)} Einträge)` +
+      (res.length ? ` – ${res.length >= 40 ? 'die ersten 40' : res.length} Treffer. Genauer suchen mit mehr Wörtern, z. B. „Frischkäse Kräuter“.` : '');
     $('chRes').innerHTML = res.length ? res.map((fd,i)=>`<button class="opt" data-i="${i}"><span>${esc(fd.name)}${fd.id.startsWith('c:')?' <span class="small muted">(eigenes)</span>':fd.bls?' <span class="small muted">(BLS)</span>':''}</span><span class="muted small">${fmt(fd.k)} kcal/100 g</span></button>`).join('')
-      : `<div class="small muted">Nichts Passendes in der eingebauten Liste.</div>`;
+      : `<div class="small muted">Nichts gefunden – auch nicht im BLS. Anderes Wort versuchen (z. B. nur „Frischkäse“), online suchen oder selbst anlegen.</div>`;
     $('chRes').onclick = e => { const b = e.target.closest('.opt'); if (b) pick(res[+b.dataset.i]); };
   };
   $('chQ').oninput = show; show();

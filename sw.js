@@ -1,5 +1,5 @@
 // Offline-Cache: App läuft auch ohne Internet. Bei neuer Version CACHE erhöhen.
-const CACHE = 'esstagebuch-v10';
+const CACHE = 'esstagebuch-v11';
 const FILES = ['./', 'index.html', 'foods.js', 'bls.js', 'manifest.json', 'icon-192.png', 'icon-512.png', 'icon-512-maskable.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener('activate', e => {
