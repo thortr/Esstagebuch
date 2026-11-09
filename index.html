@@ -215,16 +215,22 @@ nav.tabs button.on{color:var(--pri)}
 
   <!-- ===================== MEHR ===================== -->
   <section id="tab-mehr" class="hidden">
+    <div class="card stack">
+      <h2>Auswertung &amp; Export</h2>
+      <div class="small muted">Alle Eingaben sind automatisch dauerhaft gespeichert, Tag für Tag mit Mahlzeit. Hier wählst du einen Zeitraum und erzeugst daraus eine CSV – auch noch Wochen später.</div>
+      <div class="chips" id="rangeChips" style="margin-top:0"></div>
+      <div class="grid2 hidden" id="rangeCustom">
+        <div><label class="f">von</label><input class="t" type="date" id="rangeFrom"></div>
+        <div><label class="f">bis</label><input class="t" type="date" id="rangeTo"></div>
+      </div>
+      <div class="small" id="rangeInfo"></div>
+      <button class="btn pri big" id="expDaysShare">📤 Tagessummen senden (CSV)</button>
+      <button class="btn big" id="expDaysSave">💾 Tagessummen auf Handy speichern</button>
+      <button class="btn ghost big" id="expEntries">Alle Einzeleinträge im Zeitraum (CSV)</button>
+    </div>
     <div class="card">
       <h2>Name</h2>
       <div class="row"><input class="t grow" id="ownerInp" placeholder="Vorname"><button class="btn pri" id="ownerSave">Speichern</button></div>
-    </div>
-    <div class="card stack">
-      <h2>Daten exportieren</h2>
-      <div class="small muted">Eine Zeile pro Tag mit Kalorien, Fett, Eiweiß und Kohlenhydraten – passend zum Zusammenführen mit den Gewichtsdaten in Excel.</div>
-      <button class="btn pri big" id="expDaysShare">📤 Tageswerte senden (CSV)</button>
-      <button class="btn big" id="expDaysSave">💾 Tageswerte auf Handy speichern</button>
-      <button class="btn ghost big" id="expEntries">Alle Einzeleinträge als CSV</button>
     </div>
     <div class="card stack">
       <h2>Sicherung</h2>
@@ -279,7 +285,7 @@ nav.tabs button.on{color:var(--pri)}
 <script src="bls.js"></script>
 <script>
 "use strict";
-const APP_VERSION = "1.10";
+const APP_VERSION = "1.11";
 /* ============================================================
    Grunddaten
    ============================================================ */
@@ -891,6 +897,7 @@ function analyse(){
     if (dm && dm !== selMeal){ setMeal(dm, true); toast(`Mahlzeit erkannt: ${MEAL[dm].name}`); }
   }
   renderItems();
+  if ($('txt').value.trim()) saveDraft(); else if (!micActive) clearDraft();
 }
 
 function renderItems(){
@@ -940,12 +947,12 @@ function renderSave(){
   } else {
     b.disabled = false;
     const k = sumOf(currentItems.map(it=>nutr(it.food,it.g))).kcal;
-    b.innerHTML = `✓ In <u>${MEAL[selMeal].name}</u> eintragen${isToday ? '' : ' am ' + dShort(viewDate)} <span style="opacity:.8;font-weight:600">(${fmt(k)} kcal)</span>`;
+    b.innerHTML = `✓ In <u>${MEAL[selMeal].name}</u> eintragen${isToday ? '' : ' am ' + dShort(viewDate)} <span style="opacity:.8;font-weight:600">(${fmt(k)} kcal)</span><br><span style="font-size:.8rem;font-weight:500;opacity:.85">wird sonst beim Schließen der App automatisch eingetragen</span>`;
   }
 }
 
 let analyseTimer = null;
-$('txt').addEventListener('input', ()=>{ clearTimeout(analyseTimer); analyseTimer = setTimeout(analyse, 250); });
+$('txt').addEventListener('input', ()=>{ clearTimeout(analyseTimer); analyseTimer = setTimeout(analyse, 250); saveDraft(); });
 
 $('items').addEventListener('click', e=>{
   const b = e.target.closest('[data-act]'); if (!b || b.tagName === 'INPUT') return;
@@ -1006,10 +1013,11 @@ function editSegText(it){
 }
 
 /* ---------- Eintragen ---------- */
-$('saveBtn').addEventListener('click', ()=>{
-  if (!currentItems.length || currentItems.some(it=>!it.food)) return;
+$('saveBtn').addEventListener('click', ()=> commitItems(false));
+function commitItems(auto){
+  if (!currentItems.length || currentItems.some(it=>!it.food)) return false;
   learnFromTextEdit();
-  const day = viewDate, meal = selMeal, now = Date.now();
+  const day = auto ? (draftDay || viewDate) : viewDate, meal = selMeal, now = Date.now();
   const list = DB.days[day] = DB.days[day] || [];
   const added = currentItems.map((it, i) => {
     const n = nutr(it.food, it.g);
@@ -1021,14 +1029,48 @@ $('saveBtn').addEventListener('click', ()=>{
   });
   list.push(...added);
   saveDB();
-  $('txt').value = ''; overrides = {}; spoken = null; currentItems = [];
+  $('txt').value = ''; overrides = {}; spoken = null; currentItems = []; clearDraft();
   renderItems(); renderBilanz(); renderList(); renderChips();
   $('status').textContent = '';
-  toast(`${added.length === 1 ? '1 Eintrag' : added.length + ' Einträge'} in ${MEAL[meal].name} gespeichert ✓`, ()=>{
+  const what = `${added.length === 1 ? '1 Eintrag' : added.length + ' Einträge'} in ${MEAL[meal].name}${day !== todayKey() ? ' am ' + dShort(day) : ''}`;
+  toast(auto ? `${what} automatisch eingetragen ✓` : `${what} gespeichert ✓`, ()=>{
     added.forEach(e => markDeleted(e.id));
     saveDB(); renderAll();
   });
-});
+  return true;
+}
+
+/* ---------- Entwurf: Eingabe geht nie verloren ----------
+   Text wird laufend gesichert. Wer vergisst, auf „Eintragen“ zu tippen:
+   - beim Verlassen der App (Home-Taste, App wechseln, Bildschirm aus) wird automatisch eingetragen,
+   - ebenso nach 2 Minuten ohne Änderung,
+   - ist noch etwas rot markiert, bleibt der Entwurf erhalten und erscheint beim nächsten Öffnen wieder. */
+const DRAFT_KEY = 'esstagebuch_entwurf';
+let draftDay = null, idleTimer = null;
+function saveDraft(){
+  const text = $('txt').value;
+  if (!text.trim()){ clearDraft(); return; }
+  if (!draftDay) draftDay = viewDate;
+  try { localStorage.setItem(DRAFT_KEY, JSON.stringify({text, meal: selMeal, day: draftDay, overrides, ts: Date.now()})); } catch(e) {}
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => autoCommit('idle'), 2*60*1000);
+}
+function clearDraft(){ draftDay = null; clearTimeout(idleTimer); try { localStorage.removeItem(DRAFT_KEY); } catch(e) {} }
+function autoCommit(reason){
+  if (micActive || $('modalRoot').innerHTML) { if (reason === 'idle') saveDraft(); return; }
+  if (!$('txt').value.trim()) return;
+  analyse();
+  if (currentItems.length && !currentItems.some(it=>!it.food)) commitItems(true);
+}
+function restoreDraft(){
+  let d = null; try { d = JSON.parse(localStorage.getItem(DRAFT_KEY)); } catch(e) {}
+  if (!d || !d.text || $('txt').value.trim()) return;
+  $('txt').value = d.text; overrides = d.overrides || {}; draftDay = d.day || todayKey();
+  if (d.meal) selMeal = d.meal;
+  viewDate = draftDay; renderAll(); analyse();
+  if (currentItems.length && !currentItems.some(it=>!it.food)) commitItems(true);
+  else setStatus('Diese Eingabe war noch nicht eingetragen – bitte das rot Markierte klären, dann „Eintragen“.', true);
+}
 const r1 = n => Math.round(n*10)/10;
 function findEntry(id){ for (const l of Object.values(DB.days)){ const x = l.find(y=>y.id===id); if (x) return x; } return null; }
 function cleanSaid(t){
@@ -1039,7 +1081,7 @@ function cleanSaid(t){
 
 $('clearBtn').addEventListener('click', ()=>{
   const old = $('txt').value; if (!old) return;
-  $('txt').value = ''; overrides = {}; spoken = null; analyse();
+  $('txt').value = ''; overrides = {}; spoken = null; clearDraft(); analyse();
   toast('Eingabe geleert', ()=>{ $('txt').value = old; analyse(); });
 });
 
@@ -1503,17 +1545,54 @@ $('history').addEventListener('click', e=>{ const b = e.target.closest('.hday');
    ============================================================ */
 const dec = (n, d=1) => (Math.round(n*10**d)/10**d).toFixed(d).replace('.', ',');
 const csvCell = s => { s = String(s); return /[;"\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s; };
+/* ---------- Zeitraum ---------- */
+const RANGES = [
+  {id:'w1', label:'Letzte 7 Tage'}, {id:'w2', label:'Letzte 14 Tage'}, {id:'d30', label:'Letzte 30 Tage'},
+  {id:'lm', label:'Letzter Monat'}, {id:'tm', label:'Dieser Monat'}, {id:'all', label:'Alles'}, {id:'cu', label:'Eigener Zeitraum'}
+];
+let rangeId = 'w1';
+function rangeDates(){
+  const t = todayKey(), d = keyToDate(t);
+  if (rangeId === 'w1') return [addDays(t,-6), t];
+  if (rangeId === 'w2') return [addDays(t,-13), t];
+  if (rangeId === 'd30') return [addDays(t,-29), t];
+  if (rangeId === 'tm') return [dkey(new Date(d.getFullYear(), d.getMonth(), 1)), t];
+  if (rangeId === 'lm') return [dkey(new Date(d.getFullYear(), d.getMonth()-1, 1)), dkey(new Date(d.getFullYear(), d.getMonth(), 0))];
+  if (rangeId === 'cu'){ const a = $('rangeFrom').value || t, b = $('rangeTo').value || t; return a <= b ? [a, b] : [b, a]; }
+  const ks = Object.keys(DB.days).filter(k=>DB.days[k].length).sort();
+  return [ks[0] || t, t];
+}
+function daysIn([a, b]){ const out = []; for (let k = a; k <= b; k = addDays(k, 1)) out.push(k); return out; }
+function renderRange(){
+  $('rangeChips').innerHTML = RANGES.map(r=>`<button class="chip" data-r="${r.id}" style="${r.id===rangeId?'background:var(--pri);color:var(--pri-ink);border-color:var(--pri)':''}">${r.label}</button>`).join('');
+  $('rangeCustom').classList.toggle('hidden', rangeId !== 'cu');
+  const rg = rangeDates(), days = daysIn(rg), withData = days.filter(k => (DB.days[k]||[]).length);
+  const s = sumOf(withData.flatMap(k => DB.days[k])), n = withData.length;
+  $('rangeInfo').innerHTML = `<b>${dDE(rg[0])} – ${dDE(rg[1])}</b>: ${n} von ${days.length} Tagen mit Einträgen` +
+    (n ? `<br>Durchschnitt pro Tag: ${fmt(s.kcal/n)} kcal · F ${fmt(s.f/n)} g · E ${fmt(s.p/n)} g · KH ${fmt(s.c/n)} g` : '');
+}
+$('rangeChips').addEventListener('click', e => {
+  const b = e.target.closest('[data-r]'); if (!b) return; rangeId = b.dataset.r;
+  if (rangeId === 'cu' && !$('rangeFrom').value){ $('rangeFrom').value = addDays(todayKey(), -6); $('rangeTo').value = todayKey(); }
+  renderRange();
+});
+$('rangeFrom').onchange = renderRange; $('rangeTo').onchange = renderRange;
+const rangeName = () => { const [a,b] = rangeDates(); return `${a}_bis_${b}`; };
 function csvDays(){
   const rows = [['Datum','Kalorien (kcal)','Fett (g)','Eiweiß (g)','Kohlenhydrate (g)','Frühstück (kcal)','Mittagessen (kcal)','Abendessen (kcal)','Sonstiges (kcal)','Einträge']];
-  Object.keys(DB.days).filter(k=>DB.days[k].length).sort().forEach(k=>{
-    const l = DB.days[k], s = sumOf(l);
+  // jeder Tag des Zeitraums eine Zeile; Tage ohne Einträge bleiben leer (für Excel-Abgleich mit Gewicht)
+  daysIn(rangeDates()).forEach(k=>{
+    const l = DB.days[k] || [];
+    if (!l.length){ rows.push([dDE(k), '', '', '', '', '', '', '', '', 0]); return; }
+    const s = sumOf(l);
     rows.push([dDE(k), Math.round(s.kcal), dec(s.f), dec(s.p), dec(s.c), ...MEALS.map(m=>Math.round(sumOf(l.filter(e=>e.meal===m.id)).kcal)), l.length]);
   });
   return rows.map(r=>r.map(csvCell).join(';')).join('\r\n');
 }
 function csvEntries(){
   const rows = [['Datum','Uhrzeit','Mahlzeit','Eingabe','Lebensmittel','Menge','Gramm','Kalorien (kcal)','Fett (g)','Eiweiß (g)','Kohlenhydrate (g)']];
-  Object.keys(DB.days).sort().forEach(k=>{
+  const [ra, rb] = rangeDates();
+  Object.keys(DB.days).filter(k => k >= ra && k <= rb).sort().forEach(k=>{
     DB.days[k].forEach(e=>{
       const d = new Date(e.ts);
       rows.push([dDE(k), `${pad(d.getHours())}:${pad(d.getMinutes())}`, MEAL[e.meal].name, e.text, e.name, e.label, dec(e.g), Math.round(e.kcal), dec(e.f), dec(e.p), dec(e.c)]);
@@ -1542,9 +1621,9 @@ async function deliver(content, filename, mime, share){
 const stamp = () => todayKey();
 const who = () => DB.owner ? '_' + DB.owner.replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue').replace(/Ä/g,'Ae').replace(/Ö/g,'Oe').replace(/Ü/g,'Ue').replace(/ß/g,'ss').replace(/[^A-Za-z0-9]+/g,'-') : '';
 function hasData(){ if (!Object.keys(DB.days).length){ alert('Es sind noch keine Daten vorhanden.'); return false; } return true; }
-$('expDaysShare').onclick = () => hasData() && deliver(csvDays(), `Ernaehrung${who()}_Tageswerte_${stamp()}.csv`, 'text/csv;charset=utf-8', true);
-$('expDaysSave').onclick  = () => hasData() && deliver(csvDays(), `Ernaehrung${who()}_Tageswerte_${stamp()}.csv`, 'text/csv;charset=utf-8', false);
-$('expEntries').onclick   = () => hasData() && deliver(csvEntries(), `Ernaehrung${who()}_Eintraege_${stamp()}.csv`, 'text/csv;charset=utf-8', true);
+$('expDaysShare').onclick = () => hasData() && deliver(csvDays(), `Ernaehrung${who()}_Tagessummen_${rangeName()}.csv`, 'text/csv;charset=utf-8', true);
+$('expDaysSave').onclick  = () => hasData() && deliver(csvDays(), `Ernaehrung${who()}_Tagessummen_${rangeName()}.csv`, 'text/csv;charset=utf-8', false);
+$('expEntries').onclick   = () => hasData() && deliver(csvEntries(), `Ernaehrung${who()}_Eintraege_${rangeName()}.csv`, 'text/csv;charset=utf-8', true);
 
 $('backupBtn').onclick = async () => {
   const data = JSON.stringify({app:'esstagebuch', version:1, exported:new Date().toISOString(), days:DB.days, custom:DB.custom, learned:DB.learned, words:DB.words, goals:DB.goals, owner:DB.owner});
@@ -1672,7 +1751,7 @@ function showTab(name){
   ['heute','verlauf','mehr'].forEach(t=>$('tab-'+t).classList.toggle('hidden', t!==name));
   document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('on', b.dataset.tab===name));
   if (name === 'verlauf') renderHistory();
-  if (name === 'mehr'){ renderGoals(); renderWords(); renderCustom(); renderBackupInfo(); }
+  if (name === 'mehr'){ renderRange(); renderGoals(); renderWords(); renderCustom(); renderBackupInfo(); }
   window.scrollTo({top:0});
 }
 document.querySelectorAll('nav.tabs button').forEach(b=>b.onclick = ()=>{
@@ -1710,7 +1789,7 @@ function checkDay(){
   }
 }
 document.addEventListener('visibilitychange', ()=>{
-  if (document.hidden){ hiddenAt = Date.now(); return; }
+  if (document.hidden){ hiddenAt = Date.now(); autoCommit('hidden'); return; }
   refreshDB();
   checkDay();
   if (Date.now() - hiddenAt > 45*60*1000 && !$('txt').value.trim()){
@@ -1721,11 +1800,13 @@ document.addEventListener('visibilitychange', ()=>{
 setInterval(()=>{ if (!document.hidden) refreshDB(); checkDay(); }, 60*1000);
 window.addEventListener('storage', e => { if (e.key === KEY) refreshDB(); });   // andere Instanz hat gespeichert
 window.addEventListener('pageshow', () => refreshDB());
+window.addEventListener('pagehide', () => autoCommit('hidden'));
 window.addEventListener('focus', () => refreshDB());
 
 $('version').textContent = `Version ${APP_VERSION} · ${BASE_FOODS.length} Lebensmittel mit Portionsgrößen + ${BLS_FOODS.length} aus dem BLS`;
 renderAll();
 idbRestore();
+restoreDraft();
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>
