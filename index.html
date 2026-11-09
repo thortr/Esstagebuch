@@ -174,6 +174,7 @@ nav.tabs button.on{color:var(--pri)}
       <button id="toToday">Zu heute</button>
     </div>
 
+    <div class="card hidden" id="backupNote" style="border:2px solid var(--warn);background:var(--warn-soft)"></div>
     <div class="card hidden" id="closeNote" style="border:2px solid var(--pri);background:var(--pri-soft)"></div>
     <div class="card" id="bilanzCard">
       <div class="bilanz" id="bilanz"></div>
@@ -224,9 +225,9 @@ nav.tabs button.on{color:var(--pri)}
         <div><label class="f">bis</label><input class="t" type="date" id="rangeTo"></div>
       </div>
       <div class="small" id="rangeInfo"></div>
-      <button class="btn pri big" id="expDaysShare">📤 Tagessummen senden (CSV)</button>
-      <button class="btn big" id="expDaysSave">💾 Tagessummen auf Handy speichern</button>
-      <button class="btn ghost big" id="expEntries">Alle Einzeleinträge im Zeitraum (CSV)</button>
+      <button class="btn pri big" id="expDays">📊 Tagessummen exportieren</button>
+      <button class="btn big" id="expEntries">📋 Einzeleinträge exportieren</button>
+      <div class="small muted">Die CSV-Datei wird im Ordner „Downloads“ abgelegt. Danach kannst du sie direkt per E-Mail senden, in Google Drive ablegen oder mit Excel öffnen.</div>
     </div>
     <div class="card">
       <h2>Name</h2>
@@ -285,7 +286,7 @@ nav.tabs button.on{color:var(--pri)}
 <script src="bls.js"></script>
 <script>
 "use strict";
-const APP_VERSION = "1.11";
+const APP_VERSION = "1.13";
 /* ============================================================
    Grunddaten
    ============================================================ */
@@ -400,7 +401,7 @@ const KEY = 'esstagebuch_v1';
 function blankDB(d){
   d = d || {};
   d.days = d.days || {}; d.custom = d.custom || []; d.learned = d.learned || {}; d.words = d.words || {}; d.goals = d.goals || {};
-  d.deleted = d.deleted || {}; d.lastBackup = d.lastBackup || null; d.goalsTs = d.goalsTs || 0; d.seenClose = d.seenClose || ''; d.owner = d.owner || '';
+  d.deleted = d.deleted || {}; d.lastBackup = d.lastBackup || null; d.goalsTs = d.goalsTs || 0; d.seenClose = d.seenClose || ''; d.owner = d.owner || ''; d.backupSnooze = d.backupSnooze || 0;
   return d;
 }
 function readStored(){
@@ -435,6 +436,7 @@ function mergeDB(a, b){            // a = älterer/anderer Stand, b = dieser Sta
   out.lastBackup = Math.max(a.lastBackup||0, b.lastBackup||0) || null;
   out.seenClose = [a.seenClose, b.seenClose].sort().pop() || '';
   out.owner = b.owner || a.owner || '';
+  out.backupSnooze = Math.max(a.backupSnooze||0, b.backupSnooze||0);
   return out;
 }
 let DB = readStored();
@@ -1600,35 +1602,53 @@ function csvEntries(){
   });
   return rows.map(r=>r.map(csvCell).join(';')).join('\r\n');
 }
-async function deliver(content, filename, mime, share){
-  const blob = new Blob([mime.startsWith('text/csv') ? '﻿' + content : content], {type: mime});
-  if (share){
-    try {
-      const file = new File([blob], filename, {type: mime});
-      if (navigator.canShare && navigator.canShare({files:[file]})){
-        await navigator.share({files:[file], title: filename});
-        return true;
-      }
-    } catch(e){ if (e.name === 'AbortError') return false; }
-  }
+/* Export: Datei immer in „Downloads“ ablegen, danach Teilen anbieten (E-Mail, Drive, Excel …) */
+function makeFile(content, filename, mime){
+  const body = mime === 'text/csv' ? '﻿' + content : content;     // BOM, damit Excel die Umlaute richtig liest
+  return {blob: new Blob([body], {type: mime}), body};
+}
+function downloadBlob(blob, filename){
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = filename;
   document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
-  toast(`„${filename}“ gespeichert (Ordner „Downloads“)`);
+  setTimeout(()=>URL.revokeObjectURL(a.href), 60000);
+}
+// Android akzeptiert beim Teilen nur bestimmte Dateitypen – der Reihe nach probieren
+function shareableFile(body, filename, mime){
+  if (!navigator.canShare) return null;
+  for (const t of [mime, 'text/csv', 'text/plain']){
+    try { const f = new File([body], filename, {type: t}); if (navigator.canShare({files:[f]})) return f; } catch(e) {}
+  }
+  return null;
+}
+function exportFile(content, filename, mime, mailSubject){
+  const {blob, body} = makeFile(content, filename, mime);
+  downloadBlob(blob, filename);
+  const file = shareableFile(body, filename, mime);
+  const mailBody = content.length < 6000 ? content.replace(/;/g, '\t') : 'Die Datei ist zu groß für den Mailtext – bitte über „Teilen“ als Anhang senden.';
+  modal(`<h3>✓ Datei erstellt</h3>
+    <div class="small"><b>${esc(filename)}</b><br>liegt jetzt im Ordner „Downloads“.</div>
+    ${file ? `<button class="btn pri big" id="shBtn" style="margin-top:12px">📤 Teilen / Öffnen mit … <span style="font-weight:500;font-size:.85rem">(E-Mail, Drive, Excel …)</span></button>` :
+      `<div class="small muted" style="margin-top:10px">Direktes Teilen wird auf diesem Handy nicht unterstützt. Du findest die Datei in der App „Dateien“ unter „Downloads“ und kannst sie dort teilen.</div>`}
+    <a class="btn big" id="mailBtn" style="display:block;text-align:center;text-decoration:none;margin-top:8px" href="mailto:?subject=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(mailBody)}">✉️ Werte als E-Mail-Text senden</a>
+    <div class="sheetbtns"><button class="btn ghost" data-close>Schließen</button></div>`);
+  if (file) $('shBtn').onclick = async () => {
+    try { await navigator.share({files:[file], title: filename}); closeModal(); }
+    catch(e){ if (e.name !== 'AbortError') toast('Teilen nicht möglich: ' + e.message); }
+  };
   return true;
 }
 const stamp = () => todayKey();
 const who = () => DB.owner ? '_' + DB.owner.replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue').replace(/Ä/g,'Ae').replace(/Ö/g,'Oe').replace(/Ü/g,'Ue').replace(/ß/g,'ss').replace(/[^A-Za-z0-9]+/g,'-') : '';
 function hasData(){ if (!Object.keys(DB.days).length){ alert('Es sind noch keine Daten vorhanden.'); return false; } return true; }
-$('expDaysShare').onclick = () => hasData() && deliver(csvDays(), `Ernaehrung${who()}_Tagessummen_${rangeName()}.csv`, 'text/csv;charset=utf-8', true);
-$('expDaysSave').onclick  = () => hasData() && deliver(csvDays(), `Ernaehrung${who()}_Tagessummen_${rangeName()}.csv`, 'text/csv;charset=utf-8', false);
-$('expEntries').onclick   = () => hasData() && deliver(csvEntries(), `Ernaehrung${who()}_Eintraege_${rangeName()}.csv`, 'text/csv;charset=utf-8', true);
+const rangeText = () => { const [a,b] = rangeDates(); return `${dDE(a)} – ${dDE(b)}`; };
+$('expDays').onclick    = () => hasData() && exportFile(csvDays(), `Ernaehrung${who()}_Tagessummen_${rangeName()}.csv`, 'text/csv', `Ernährung${DB.owner ? ' ' + DB.owner : ''}: Tagessummen ${rangeText()}`);
+$('expEntries').onclick = () => hasData() && exportFile(csvEntries(), `Ernaehrung${who()}_Eintraege_${rangeName()}.csv`, 'text/csv', `Ernährung${DB.owner ? ' ' + DB.owner : ''}: Einzeleinträge ${rangeText()}`);
 
 $('backupBtn').onclick = async () => {
   const data = JSON.stringify({app:'esstagebuch', version:1, exported:new Date().toISOString(), days:DB.days, custom:DB.custom, learned:DB.learned, words:DB.words, goals:DB.goals, owner:DB.owner});
-  const ok = await deliver(data, `Esstagebuch${who()}_Sicherung_${stamp()}.json`, 'application/json', true);
-  if (ok){ DB.lastBackup = Date.now(); saveDB(); renderBackupInfo(); }
+  exportFile(data, `Esstagebuch${who()}_Sicherung_${stamp()}.json`, 'application/json', `Esstagebuch-Sicherung${DB.owner ? ' ' + DB.owner : ''} ${dDE(todayKey())}`);
+  DB.lastBackup = Date.now(); saveDB(); renderBackupInfo(); renderBackupNote();
 };
 $('restoreBtn').onclick = () => $('restoreFile').click();
 $('restoreFile').onchange = async e => {
@@ -1732,6 +1752,7 @@ $('saveGoals').onclick = () => {
    Dialog, Hinweis, Tabs
    ============================================================ */
 function modal(html){
+  $('toast').classList.add('hidden');
   $('modalRoot').innerHTML = `<div class="modal"><div class="sheet">${html}</div></div>`;
   const m = $('modalRoot').firstChild;
   m.addEventListener('click', e=>{ if (e.target === m || e.target.closest('[data-close]')) closeModal(); });
@@ -1778,7 +1799,22 @@ function renderOwner(){
 }
 let sessionSkipOwner = false;
 function setOwner(v){ v = v.trim(); if (!v) { alert('Bitte einen Namen eingeben.'); return false; } DB.owner = v; saveDB(); renderOwner(); toast(`Name gespeichert: ${v} ✓`); return true; }
-function renderAll(){ renderOwner(); renderCloseNote(); renderDate(); renderBilanz(); renderMeals(); renderList(); renderChips(); renderItems(); if (!$('tab-verlauf').classList.contains('hidden')) renderHistory(); }
+// Erinnerung: nach 30 Tagen ohne Sicherung
+function renderBackupNote(){
+  const box = $('backupNote'), now = Date.now(), DAY = 864e5;
+  const first = Object.keys(DB.days).filter(k => DB.days[k].length).sort()[0];
+  const since = DB.lastBackup || (first ? keyToDate(first).getTime() : now);
+  const due = first && now - since >= 30*DAY && now >= (DB.backupSnooze||0) && viewDate === todayKey();
+  if (!due){ box.classList.add('hidden'); return; }
+  const days = Math.floor((now - since) / DAY);
+  box.innerHTML = `<div style="font-weight:700;color:var(--warn)">🛟 Zeit für eine Sicherung</div>
+    <div class="small" style="margin-top:4px">${DB.lastBackup ? `Die letzte Sicherung ist ${days} Tage her.` : 'Es gibt noch keine Sicherung.'} Die Daten liegen nur auf diesem Handy – eine Sicherung per E-Mail oder Google Drive schützt vor Verlust (z. B. neues Handy).</div>
+    <div class="row" style="margin-top:8px"><button class="btn pri grow" id="bnNow">Jetzt sichern</button><button class="btn ghost" id="bnLater">In 3 Tagen</button></div>`;
+  box.classList.remove('hidden');
+  $('bnNow').onclick = () => { $('backupBtn').click(); renderBackupNote(); };
+  $('bnLater').onclick = () => { DB.backupSnooze = now + 3*DAY; saveDB(); renderBackupNote(); };
+}
+function renderAll(){ renderOwner(); renderBackupNote(); renderCloseNote(); renderDate(); renderBilanz(); renderMeals(); renderList(); renderChips(); renderItems(); if (!$('tab-verlauf').classList.contains('hidden')) renderHistory(); }
 
 /* ---------- Tageswechsel / Rückkehr in die App ---------- */
 function checkDay(){
