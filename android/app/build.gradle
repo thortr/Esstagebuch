@@ -1,0 +1,44 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'de.thortr.esstagebuch'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'de.thortr.esstagebuch'
+        minSdk 29
+        targetSdk 34
+        // Build-Nummer von GitHub (steigt bei jedem Lauf), damit Updates installiert werden können
+        versionCode((System.getenv('GITHUB_RUN_NUMBER') ?: '1').toInteger())
+        versionName(project.findProperty('appVersion') ?: '1.0')
+    }
+
+    // Fester Schlüssel: alle Versionen sind gleich signiert -> Updates behalten die Daten
+    signingConfigs {
+        release {
+            storeFile file('../esstagebuch.keystore')
+            storePassword 'esstagebuch-schluessel'
+            keyAlias 'esstagebuch'
+            keyPassword 'esstagebuch-schluessel'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+}

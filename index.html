@@ -239,6 +239,7 @@ nav.tabs button.on{color:var(--pri)}
       <button class="btn big" id="backupBtn">🛟 Sicherung erstellen</button>
       <button class="btn ghost big" id="restoreBtn">Sicherung einlesen</button>
       <button class="btn ghost big" id="csvImpBtn">CSV-Export wieder einlesen</button>
+      <button class="btn ghost big hidden" id="dailyBtn">Automatische Tageskopie zurückholen</button>
       <input type="file" id="csvImpFile" accept=".csv,text/csv,text/comma-separated-values,text/plain" class="hidden">
       <input type="file" id="restoreFile" accept=".json,application/json" class="hidden">
     </div>
@@ -272,7 +273,7 @@ nav.tabs button.on{color:var(--pri)}
     </div>
     <div class="card small muted">
       <b>Hinweis:</b> Die Nährwerte sind Richtwerte pro 100 g. Grundlage sind eine eingebaute Liste häufiger Lebensmittel mit üblichen Portionsgrößen und der Bundeslebensmittelschlüssel (über 7.000 Lebensmittel und Gerichte, mit „BLS“ gekennzeichnet). Gebratenes und Salate der eingebauten Liste sind <b>ohne Brat- bzw. Salatöl</b> gerechnet – Öl, Butter oder Dressing bitte extra eintragen (z. B. „1 EL Olivenöl“). Für Markenprodukte lieber „Online suchen“ nutzen oder das Etikett als eigenes Lebensmittel anlegen – die App merkt sich das.<br><br>
-      Die Spracheingabe nutzt die Spracherkennung von Chrome und braucht dafür meist Internet. Alles andere läuft ohne Internet.<br><br>
+      Die Spracheingabe nutzt die Spracherkennung von Google und braucht dafür meist Internet. Alles andere läuft ohne Internet.<br><br>
       <span id="version"></span><br><br>
       Nährwertdaten: Max Rubner-Institut (2025): Bundeslebensmittelschlüssel (BLS), Version 4.0 – Deutsche Nährstoffdatenbank. Karlsruhe. DOI: 10.25826/Data20251217-134202-0. Lizenz: <a href="https://creativecommons.org/licenses/by/4.0/deed.de" target="_blank" rel="noopener">CC BY 4.0</a>. Übernommen: Energie, Fett, Protein, verfügbare Kohlenhydrate; gerundet.
     </div>
@@ -292,7 +293,7 @@ nav.tabs button.on{color:var(--pri)}
 <script src="bls.js"></script>
 <script>
 "use strict";
-const APP_VERSION = "1.14";
+const APP_VERSION = "1.15";
 /* ============================================================
    Grunddaten
    ============================================================ */
@@ -399,6 +400,23 @@ const BLS_FOODS = [];
    Speicher
    ============================================================ */
 const KEY = 'esstagebuch_v1';
+/* Als Android-App (APK) liegen die Daten als Dateien im privaten App-Speicher – sicher vor
+   Aufräum-Apps. Im Browser wird localStorage benutzt. Beides über diese drei Funktionen. */
+const NATIVE = !!(window.Android && window.Android.kvGet);
+function stGet(k){
+  if (NATIVE){ try { const v = Android.kvGet(k); if (v) return v; } catch(e) {} }
+  try { return localStorage.getItem(k); } catch(e) { return null; }
+}
+function stSet(k, v){
+  let ok = false;
+  if (NATIVE){ try { ok = Android.kvSet(k, v); } catch(e) {} }
+  try { localStorage.setItem(k, v); ok = true; } catch(e){ if (!ok) throw e; }
+  return ok;
+}
+function stRemove(k){
+  if (NATIVE){ try { Android.kvRemove(k); } catch(e) {} }
+  try { localStorage.removeItem(k); } catch(e) {}
+}
 /* Sicher speichern:
    - Jede App-Instanz (Startbildschirm-App, Chrome-Tab, im Hintergrund vergessene alte Instanz)
      liest vor dem Schreiben den aktuellen Stand und FÜHRT ZUSAMMEN statt zu überschreiben.
@@ -412,10 +430,10 @@ function blankDB(d){
 }
 function readStored(){
   let raw = null;
-  try { raw = localStorage.getItem(KEY); } catch(e) {}
+  try { raw = stGet(KEY); } catch(e) {}
   if (!raw) return blankDB();
   try { return blankDB(JSON.parse(raw)); }
-  catch(e){ try { localStorage.setItem(KEY + '_defekt_' + Date.now(), raw); } catch(_) {} return blankDB(); }
+  catch(e){ try { stSet(KEY + '_defekt_' + Date.now(), raw); } catch(_) {} return blankDB(); }
 }
 const loadDB = readStored;
 const tOf = x => x.mt || x.ts || 0;
@@ -448,7 +466,7 @@ function mergeDB(a, b){            // a = älterer/anderer Stand, b = dieser Sta
 let DB = readStored();
 function saveDB(){
   DB = mergeDB(readStored(), DB);
-  try { localStorage.setItem(KEY, JSON.stringify(DB)); }
+  try { stSet(KEY, JSON.stringify(DB)); }
   catch(e){ alert('Speichern fehlgeschlagen: ' + e.message + '\nBitte unter „Export & mehr“ eine Sicherung erstellen.'); }
   idbSave();
 }
@@ -1060,11 +1078,11 @@ function saveDraft(){
   const text = $('txt').value;
   if (!text.trim()){ clearDraft(); return; }
   if (!draftDay){ draftDay = viewDate; if (!mealTouched && viewDate === todayKey() && mealByTime() !== selMeal) setMeal(mealByTime()); }
-  try { localStorage.setItem(DRAFT_KEY, JSON.stringify({text, meal: selMeal, day: draftDay, overrides, ts: Date.now()})); } catch(e) {}
+  try { stSet(DRAFT_KEY, JSON.stringify({text, meal: selMeal, day: draftDay, overrides, ts: Date.now()})); } catch(e) {}
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => autoCommit('idle'), 2*60*1000);
 }
-function clearDraft(){ draftDay = null; clearTimeout(idleTimer); try { localStorage.removeItem(DRAFT_KEY); } catch(e) {} }
+function clearDraft(){ draftDay = null; clearTimeout(idleTimer); stRemove(DRAFT_KEY); }
 function autoCommit(reason){
   if (micActive || $('modalRoot').innerHTML) { if (reason === 'idle') saveDraft(); return; }
   if (!$('txt').value.trim()) return;
@@ -1072,7 +1090,7 @@ function autoCommit(reason){
   if (currentItems.length && !currentItems.some(it=>!it.food)) commitItems(true);
 }
 function restoreDraft(){
-  let d = null; try { d = JSON.parse(localStorage.getItem(DRAFT_KEY)); } catch(e) {}
+  let d = null; try { d = JSON.parse(stGet(DRAFT_KEY)); } catch(e) {}
   if (!d || !d.text || $('txt').value.trim()) return;
   $('txt').value = d.text; overrides = d.overrides || {}; draftDay = d.day || todayKey();
   if (d.meal) selMeal = d.meal;
@@ -1190,7 +1208,23 @@ $('toToday').onclick = () => goDay(todayKey());
 /* ============================================================
    Spracheingabe
    ============================================================ */
-const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const SR_WEB = window.SpeechRecognition || window.webkitSpeechRecognition;
+const SR_NATIVE = NATIVE && (() => { try { return Android.hasSpeech(); } catch(e) { return false; } })();
+const SR = SR_NATIVE || SR_WEB;
+// Android-App: Googles Spracheingabe-Fenster, liefert bis zu 5 Varianten
+function dictateNative({onText, onDone, onStart}){
+  let done = false;
+  const finish = got => { if (done) return; done = true; rec = null; window.__androidSpeech = window.__androidSpeechEnd = null; onDone && onDone(got); };
+  window.__androidSpeech = alts => {
+    const res = alts.map(t => ({transcript: t})); res.isFinal = true;
+    onText(bestAlternative(res).trim(), false); finish(true);
+  };
+  window.__androidSpeechEnd = err => { if (err) setStatus('Spracheingabe ' + err + '.', true); finish(false); };
+  rec = {stop(){}};
+  onStart && onStart();
+  try { Android.startSpeech(); } catch(e){ setStatus('Spracheingabe konnte nicht starten.', true); finish(false); }
+  return rec;
+}
 let rec = null;
 // Von mehreren Hörvarianten die nehmen, in der die meisten Lebensmittel erkannt werden
 function knownScore(text){
@@ -1207,7 +1241,10 @@ function bestAlternative(res){
 function setStatus(t, err){ $('status').textContent = t; $('status').classList.toggle('err', !!err); }
 function stopRec(){ if (rec){ try{ rec.stop(); }catch(e){} } }
 
-function dictate({onText, onDone, onStart}){
+function dictate(opts){
+  if (SR_NATIVE) return dictateNative(opts);
+  const {onText, onDone, onStart} = opts;
+  const SR = SR_WEB;
   if (!SR){ setStatus('Spracheingabe wird hier nicht unterstützt – bitte das Mikrofon der Tastatur benutzen.', true); return null; }
   stopRec();
   const r = new SR();
@@ -1630,15 +1667,23 @@ function shareableFile(body, filename, mime){
 }
 function exportFile(content, filename, mime, mailSubject){
   const {blob, body} = makeFile(content, filename, mime);
-  downloadBlob(blob, filename);
-  const file = shareableFile(body, filename, mime);
+  let file = null, nativeOk = false;
+  if (NATIVE){
+    const r = Android.exportFile(filename, mime, body);
+    if (r !== 'ok'){ alert('Die Datei konnte nicht gespeichert werden: ' + r); return false; }
+    nativeOk = true;
+  } else {
+    downloadBlob(blob, filename);
+    file = shareableFile(body, filename, mime);
+  }
   const mailBody = content.length < 6000 ? content.replace(/;/g, '\t') : 'Die Datei ist zu groß für den Mailtext – bitte über „Teilen“ als Anhang senden.';
   modal(`<h3>✓ Datei erstellt</h3>
     <div class="small"><b>${esc(filename)}</b><br>liegt jetzt im Ordner „Downloads“.</div>
-    ${file ? `<button class="btn pri big" id="shBtn" style="margin-top:12px">📤 Teilen / Öffnen mit … <span style="font-weight:500;font-size:.85rem">(E-Mail, Drive, Excel …)</span></button>` :
+    ${file || nativeOk ? `<button class="btn pri big" id="shBtn" style="margin-top:12px">📤 Teilen / Öffnen mit … <span style="font-weight:500;font-size:.85rem">(E-Mail, Drive, Excel …)</span></button>` :
       `<div class="small muted" style="margin-top:10px">Direktes Teilen wird auf diesem Handy nicht unterstützt. Du findest die Datei in der App „Dateien“ unter „Downloads“ und kannst sie dort teilen.</div>`}
     <a class="btn big" id="mailBtn" style="display:block;text-align:center;text-decoration:none;margin-top:8px" href="mailto:?subject=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(mailBody)}">✉️ Werte als E-Mail-Text senden</a>
     <div class="sheetbtns"><button class="btn ghost" data-close>Schließen</button></div>`);
+  if (nativeOk) $('shBtn').onclick = () => { Android.shareLast(mailSubject); closeModal(); };
   if (file) $('shBtn').onclick = async () => {
     try { await navigator.share({files:[file], title: filename}); closeModal(); }
     catch(e){ if (e.name !== 'AbortError') toast('Teilen nicht möglich: ' + e.message); }
@@ -1746,10 +1791,10 @@ $('csvImpFile').onchange = async ev => {
 const ID_KEY = 'esstagebuch_speicher_id';
 let STORE_ID = null;
 (function(){
-  try { STORE_ID = JSON.parse(localStorage.getItem(ID_KEY)); } catch(e) {}
+  try { STORE_ID = JSON.parse(stGet(ID_KEY)); } catch(e) {}
   if (!STORE_ID){
     STORE_ID = {id: Math.random().toString(36).slice(2,6).toUpperCase(), created: Date.now()};
-    try { localStorage.setItem(ID_KEY, JSON.stringify(STORE_ID)); } catch(e) {}
+    try { stSet(ID_KEY, JSON.stringify(STORE_ID)); } catch(e) {}
   }
 })();
 function browserName(){
@@ -1770,10 +1815,17 @@ async function diagInfo(){
   return [
     ['Version', APP_VERSION],
     ['Speicher-ID', `${STORE_ID.id} (angelegt ${new Date(STORE_ID.created).toLocaleString('de-DE')})`],
-    ['Browser', browserName()],
-    ['Geöffnet als', standalone ? 'App vom Startbildschirm' : 'Browser-Tab'],
-    ['Adresse', location.origin + location.pathname],
-    ['Dauerhafter Speicher', persisted + (quota !== '?' ? ` · Platz ${quota}` : '')],
+    ...(NATIVE ? [
+      ['Gerät', (() => { try { return Android.info(); } catch(e) { return 'Android-App'; } })()],
+      ['Speicher', 'Dateien im App-Speicher (sicher vor Bereinigen)'],
+      ['Tageskopien', (() => { try { return JSON.parse(Android.listBackups()).length + ' (je Tag eine, 60 Tage)'; } catch(e) { return '?'; } })()],
+      ['Spracheingabe', SR_NATIVE ? 'Google-Spracheingabe' : 'nicht verfügbar'],
+    ] : [
+      ['Browser', browserName()],
+      ['Geöffnet als', standalone ? 'App vom Startbildschirm' : 'Browser-Tab'],
+      ['Adresse', location.origin + location.pathname],
+      ['Dauerhafter Speicher', persisted + (quota !== '?' ? ` · Platz ${quota}` : '')],
+    ]),
     ['Name', DB.owner || '(leer)'],
     ['Tage mit Einträgen', days.length ? `${days.length} (${dDE(days[0])} – ${dDE(days[days.length-1])})` : '0'],
     ['Letzte Sicherung', DB.lastBackup ? new Date(DB.lastBackup).toLocaleString('de-DE') : 'keine'],
@@ -1785,8 +1837,27 @@ async function renderDiag(){
 }
 $('diagCopy').onclick = async () => {
   const txt = (await diagInfo()).map(([k,v]) => `${k}: ${v}`).join('\n');
-  try { await navigator.clipboard.writeText(txt); toast('Info kopiert – z. B. in WhatsApp oder E-Mail einfügen'); }
+  try { if (NATIVE) Android.copy(txt); else await navigator.clipboard.writeText(txt); toast('Info kopiert – z. B. in WhatsApp oder E-Mail einfügen'); }
   catch(e){ modal(`<h3>Technische Info</h3><textarea class="t" style="height:220px">${esc(txt)}</textarea><div class="sheetbtns"><button class="btn ghost" data-close>Schließen</button></div>`); }
+};
+if (NATIVE) $('dailyBtn').classList.remove('hidden');
+$('dailyBtn').onclick = () => {
+  let list = []; try { list = JSON.parse(Android.listBackups()); } catch(e) {}
+  if (!list.length){ alert('Noch keine Tageskopien vorhanden.'); return; }
+  modal(`<h3>Automatische Tageskopien</h3>
+    <div class="small muted" style="margin-bottom:8px">Die App legt jeden Tag selbst eine Kopie aller Daten an. Eine Kopie zurückholen ergänzt fehlende Einträge – vorhandene bleiben unverändert.</div>
+    ${list.map((n,i)=>`<button class="opt" data-i="${i}"><span>${dDE(n.replace(/\D*(\d{4}-\d{2}-\d{2}).*/, '$1'))}</span><span class="muted small">zurückholen</span></button>`).join('')}
+    <div class="sheetbtns"><button class="btn ghost" data-close>Schließen</button></div>`);
+  document.querySelector('.sheet').onclick = e => {
+    const b = e.target.closest('.opt'); if (!b) return;
+    try {
+      const j = blankDB(JSON.parse(Android.readBackup(list[+b.dataset.i])));
+      const before = Object.values(DB.days).reduce((n,l)=>n+l.length,0);
+      DB = mergeDB(j, DB); saveDB(); rebuildCustom(); renderAll(); closeModal();
+      const after = Object.values(DB.days).reduce((n,l)=>n+l.length,0);
+      toast(`${after - before} Einträge zurückgeholt ✓`);
+    } catch(err){ alert('Kopie konnte nicht gelesen werden: ' + err.message); }
+  };
 };
 function renderBackupInfo(){
   if (!DB.lastBackup){ $('backupInfo').textContent = 'Noch keine Sicherung erstellt.'; return; }
@@ -1896,6 +1967,13 @@ $('version').textContent = `Version ${APP_VERSION} · ${BASE_FOODS.length} Leben
 renderAll();
 idbRestore();
 restoreDraft();
+window.__back = () => {
+  if ($('modalRoot').innerHTML){ closeModal(); return true; }
+  if ($('tab-heute').classList.contains('hidden')){ showTab('heute'); return true; }
+  return false;
+};
+window.__androidPause = () => autoCommit('hidden');
+window.__androidResume = () => { refreshDB(); checkDay(); };
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>
