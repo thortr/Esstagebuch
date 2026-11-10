@@ -264,6 +264,12 @@ nav.tabs button.on{color:var(--pri)}
       <div id="customList"></div>
       <button class="btn big" id="addCustom" style="margin-top:6px">＋ Lebensmittel anlegen</button>
     </div>
+    <div class="card">
+      <h2>Technische Info</h2>
+      <div class="small muted" style="margin-bottom:8px">Hilft bei der Fehlersuche. Jeder Browser und jede Art, die App zu öffnen, kann einen eigenen Speicher haben – die Speicher-ID muss immer gleich sein.</div>
+      <div id="diag" class="small" style="line-height:1.6"></div>
+      <button class="btn big" id="diagCopy" style="margin-top:8px">📋 Info kopieren</button>
+    </div>
     <div class="card small muted">
       <b>Hinweis:</b> Die Nährwerte sind Richtwerte pro 100 g. Grundlage sind eine eingebaute Liste häufiger Lebensmittel mit üblichen Portionsgrößen und der Bundeslebensmittelschlüssel (über 7.000 Lebensmittel und Gerichte, mit „BLS“ gekennzeichnet). Gebratenes und Salate der eingebauten Liste sind <b>ohne Brat- bzw. Salatöl</b> gerechnet – Öl, Butter oder Dressing bitte extra eintragen (z. B. „1 EL Olivenöl“). Für Markenprodukte lieber „Online suchen“ nutzen oder das Etikett als eigenes Lebensmittel anlegen – die App merkt sich das.<br><br>
       Die Spracheingabe nutzt die Spracherkennung von Chrome und braucht dafür meist Internet. Alles andere läuft ohne Internet.<br><br>
@@ -286,7 +292,7 @@ nav.tabs button.on{color:var(--pri)}
 <script src="bls.js"></script>
 <script>
 "use strict";
-const APP_VERSION = "1.13";
+const APP_VERSION = "1.14";
 /* ============================================================
    Grunddaten
    ============================================================ */
@@ -483,7 +489,8 @@ async function idbRestore(){
     else idbSave();
   } catch(e) {}
 }
-if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(()=>{});
+function askPersist(){ try { if (navigator.storage && navigator.storage.persist) navigator.storage.persisted().then(p => p || navigator.storage.persist()).catch(()=>{}); } catch(e) {} }
+askPersist();
 
 let CUSTOM = [];
 function rebuildCustom(){ CUSTOM = DB.custom.map(c=>indexFood({...c, aliases:c.aliases||[c.name], u:c.u||{}})); }
@@ -1031,7 +1038,7 @@ function commitItems(auto){
   });
   list.push(...added);
   saveDB();
-  $('txt').value = ''; overrides = {}; spoken = null; currentItems = []; clearDraft();
+  $('txt').value = ''; overrides = {}; spoken = null; currentItems = []; clearDraft(); mealTouched = false;
   renderItems(); renderBilanz(); renderList(); renderChips();
   $('status').textContent = '';
   const what = `${added.length === 1 ? '1 Eintrag' : added.length + ' Einträge'} in ${MEAL[meal].name}${day !== todayKey() ? ' am ' + dShort(day) : ''}`;
@@ -1052,7 +1059,7 @@ let draftDay = null, idleTimer = null;
 function saveDraft(){
   const text = $('txt').value;
   if (!text.trim()){ clearDraft(); return; }
-  if (!draftDay) draftDay = viewDate;
+  if (!draftDay){ draftDay = viewDate; if (!mealTouched && viewDate === todayKey() && mealByTime() !== selMeal) setMeal(mealByTime()); }
   try { localStorage.setItem(DRAFT_KEY, JSON.stringify({text, meal: selMeal, day: draftDay, overrides, ts: Date.now()})); } catch(e) {}
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => autoCommit('idle'), 2*60*1000);
@@ -1735,6 +1742,52 @@ $('csvImpFile').onchange = async ev => {
   plan.forEach(x => (DB.days[x.day] = DB.days[x.day] || []).push(x.entry));
   saveDB(); renderAll(); toast(`${plan.length === 1 ? '1 Eintrag' : plan.length + ' Einträge'} wiederhergestellt ✓`);
 };
+/* ---------- Diagnose: welcher Speicher ist das? ---------- */
+const ID_KEY = 'esstagebuch_speicher_id';
+let STORE_ID = null;
+(function(){
+  try { STORE_ID = JSON.parse(localStorage.getItem(ID_KEY)); } catch(e) {}
+  if (!STORE_ID){
+    STORE_ID = {id: Math.random().toString(36).slice(2,6).toUpperCase(), created: Date.now()};
+    try { localStorage.setItem(ID_KEY, JSON.stringify(STORE_ID)); } catch(e) {}
+  }
+})();
+function browserName(){
+  const u = navigator.userAgent;
+  if (/SamsungBrowser\/([\d.]+)/.test(u)) return 'Samsung Internet ' + RegExp.$1;
+  if (/Firefox\/([\d.]+)/.test(u)) return 'Firefox ' + RegExp.$1;
+  if (/EdgA?\/([\d.]+)/.test(u)) return 'Edge ' + RegExp.$1;
+  if (/OPR\/([\d.]+)/.test(u)) return 'Opera ' + RegExp.$1;
+  if (/Chrome\/([\d.]+)/.test(u)) return 'Chrome ' + RegExp.$1.split('.')[0];
+  return u.slice(0, 60);
+}
+async function diagInfo(){
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  let persisted = '?', quota = '?';
+  try { if (navigator.storage && navigator.storage.persisted) persisted = (await navigator.storage.persisted()) ? 'ja' : 'nein'; } catch(e) {}
+  try { if (navigator.storage && navigator.storage.estimate){ const e = await navigator.storage.estimate(); quota = Math.round(e.quota/1e6) + ' MB'; } } catch(e) {}
+  const days = Object.keys(DB.days).filter(k=>DB.days[k].length).sort();
+  return [
+    ['Version', APP_VERSION],
+    ['Speicher-ID', `${STORE_ID.id} (angelegt ${new Date(STORE_ID.created).toLocaleString('de-DE')})`],
+    ['Browser', browserName()],
+    ['Geöffnet als', standalone ? 'App vom Startbildschirm' : 'Browser-Tab'],
+    ['Adresse', location.origin + location.pathname],
+    ['Dauerhafter Speicher', persisted + (quota !== '?' ? ` · Platz ${quota}` : '')],
+    ['Name', DB.owner || '(leer)'],
+    ['Tage mit Einträgen', days.length ? `${days.length} (${dDE(days[0])} – ${dDE(days[days.length-1])})` : '0'],
+    ['Letzte Sicherung', DB.lastBackup ? new Date(DB.lastBackup).toLocaleString('de-DE') : 'keine'],
+  ];
+}
+async function renderDiag(){
+  const rows = await diagInfo();
+  $('diag').innerHTML = rows.map(([k,v]) => `<b>${k}:</b> ${esc(v)}`).join('<br>');
+}
+$('diagCopy').onclick = async () => {
+  const txt = (await diagInfo()).map(([k,v]) => `${k}: ${v}`).join('\n');
+  try { await navigator.clipboard.writeText(txt); toast('Info kopiert – z. B. in WhatsApp oder E-Mail einfügen'); }
+  catch(e){ modal(`<h3>Technische Info</h3><textarea class="t" style="height:220px">${esc(txt)}</textarea><div class="sheetbtns"><button class="btn ghost" data-close>Schließen</button></div>`); }
+};
 function renderBackupInfo(){
   if (!DB.lastBackup){ $('backupInfo').textContent = 'Noch keine Sicherung erstellt.'; return; }
   const d = Math.floor((Date.now()-DB.lastBackup)/864e5);
@@ -1772,7 +1825,7 @@ function showTab(name){
   ['heute','verlauf','mehr'].forEach(t=>$('tab-'+t).classList.toggle('hidden', t!==name));
   document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('on', b.dataset.tab===name));
   if (name === 'verlauf') renderHistory();
-  if (name === 'mehr'){ renderRange(); renderGoals(); renderWords(); renderCustom(); renderBackupInfo(); }
+  if (name === 'mehr'){ renderDiag(); renderRange(); renderGoals(); renderWords(); renderCustom(); renderBackupInfo(); }
   window.scrollTo({top:0});
 }
 document.querySelectorAll('nav.tabs button').forEach(b=>b.onclick = ()=>{
@@ -1792,8 +1845,8 @@ function renderCloseNote(){
   $('closeOk').onclick = () => { DB.seenClose = prev; saveDB(); box.classList.add('hidden'); };
 }
 function renderOwner(){
-  $('ownerLine').textContent = DB.owner ? `Esstagebuch von ${DB.owner}` : '';
-  $('ownerLine').classList.toggle('hidden', !DB.owner);
+  $('ownerLine').textContent = (DB.owner ? `Esstagebuch von ${DB.owner}` : 'Esstagebuch') + ` · Speicher ${STORE_ID ? STORE_ID.id : ''}`;
+  $('ownerLine').classList.remove('hidden');
   $('ownerAsk').classList.toggle('hidden', !!DB.owner || !!sessionSkipOwner);
   if ($('ownerInp') && document.activeElement !== $('ownerInp')) $('ownerInp').value = DB.owner;
 }
